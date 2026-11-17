@@ -1,0 +1,75 @@
+/**
+ * The settings screen shows only what config.schema.json's "form" lists. An option that is in the schema but not in
+ * the form can be changed only by editing the JSON, so every option must be in both.
+ */
+const test = require('node:test')
+const assert = require('node:assert')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const schema = JSON.parse(fs.readFileSync(path.join(__dirname, '../config.schema.json'), 'utf8'))
+const shown = new Set()
+const walk = (node) => {
+  if (typeof node === 'string') shown.add(node)
+  else if (Array.isArray(node)) node.forEach(walk)
+  else if (node && typeof node === 'object') {
+    if (typeof node.key === 'string') shown.add(node.key)
+    for (const value of Object.values(node)) if (typeof value === 'object') walk(value)
+  }
+}
+walk(schema.form)
+
+test('every advanced option in the schema is on the settings screen', () => {
+  const missing = Object.keys(schema.schema.properties.advanced.properties).filter((key) => !shown.has(`advanced.${key}`))
+  assert.deepStrictEqual(missing, [], 'add these to the Advanced section of "form" in config.schema.json')
+})
+
+test('the camera picture and live view options are in the Advanced section, with the test page port', () => {
+  const advanced = schema.form.find((item) => item && item.title === 'Advanced')
+  const keys = advanced.items.map((item) => (typeof item === 'string' ? item : item.key))
+  for (const key of ['snapshotRefreshSeconds', 'snapshotOnMotion', 'sensorHoldSeconds', 'warmLiveView', 'webServerPort']) {
+    assert.ok(keys.includes(`advanced.${key}`), key)
+  }
+})
+
+test('a number with both a minimum and a maximum is drawn as a slider by default, so these are forced to plain number inputs', () => {
+  const advanced = schema.form.find((item) => item && item.title === 'Advanced')
+  const properties = schema.schema.properties.advanced.properties
+  for (const [key, property] of Object.entries(properties)) {
+    if (!['integer', 'number'].includes(property.type) || property.minimum === undefined || property.maximum === undefined) continue
+    const item = advanced.items.find((i) => (typeof i === 'string' ? i : i.key) === `advanced.${key}`)
+    assert.ok(item && typeof item === 'object' && item.type === 'number', `advanced.${key} needs { "key": "advanced.${key}", "type": "number" } in the form`)
+  }
+})
+
+// ---- detection labels ----
+// The settings panel saves the name of any AI label it finds on a camera's events, even one the plugin has no sensor
+// for yet ("turning one on only saves the name"). The schema must accept such a name, or Homebridge reports
+// "Config validation failed" for a config the plugin itself wrote.
+
+test('a camera\'s detections accept any label name, and the settings page offers the known ones', () => {
+  const cameraProps = schema.schema.properties.cameras.items.properties
+  assert.deepStrictEqual(cameraProps.detections.items, { type: 'string' }, 'no enum: a saved name the plugin does not know must stay valid')
+  assert.match(cameraProps.detections.description, /kept in the list and does nothing/)
+  assert.ok(require('../src/detectedView').LABELS.length >= 5)
+})
+
+test('the per-camera options are set on the settings page\'s camera cards, not twice in the form', () => {
+  const view = require('../src/detectedView')
+  assert.ok(!shown.has('cameras'), 'no Cameras section in the form')
+  for (const key of view.SWITCHES.map((sw) => sw.key)) {
+    assert.ok(schema.schema.properties.cameras.items.properties[key], `${key} is still valid in the config`)
+    assert.ok(!shown.has(`cameras[].${key}`), `${key} is on the cards, not in the form`)
+  }
+  assert.ok(view.SENSORS.every((sensor) => schema.schema.properties.cameras.items.properties[sensor.key]))
+})
+
+test('the form is plain sections that open and close, not a strip of tabs in the middle of the settings page', () => {
+  assert.ok(!JSON.stringify(schema.form).includes('"tabarray"'))
+  assert.ok(!JSON.stringify(schema.form).includes('"type":"tabs"'))
+  for (const section of schema.form) {
+    assert.strictEqual(section.type, 'fieldset', section.title)
+    assert.strictEqual(section.expandable, true, section.title)
+  }
+  assert.strictEqual(schema.form.find((s) => s.title === 'Account').expanded, true, 'the first thing to fill in is open')
+})

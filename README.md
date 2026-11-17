@@ -3,127 +3,515 @@
 [![certified-hoobs-plugin](https://badgen.net/badge/HOOBS/certified/yellow)](https://plugins.hoobs.org/plugin/homebridge-wyze-smart-home)
 [![npm](https://img.shields.io/npm/dt/homebridge-wyze-smart-home)](https://www.npmjs.com/package/homebridge-wyze-smart-home)
 [![npm](https://img.shields.io/npm/v/homebridge-wyze-smart-home.svg?style=flat-square)](https://www.npmjs.com/package/homebridge-wyze-smart-home)
-[![GitHub last commit](https://img.shields.io/github/last-commit/jfarmer08/homebridge-wyze-smart-home)](https://github.com/jfarmer08/homebridge-wyze-smart-home)
+[![GitHub last commit](https://img.shields.io/github/last-commit/identd113/homebridge-wyze-smart-home)](https://github.com/identd113/homebridge-wyze-smart-home)
+[![CI](https://github.com/identd113/homebridge-wyze-smart-home/actions/workflows/ci.yml/badge.svg?branch=2.x)](https://github.com/identd113/homebridge-wyze-smart-home/actions/workflows/ci.yml)
 [![Chat](https://img.shields.io/discord/1134601590762913863)](https://discord.gg/Mjkpq2x9)
 
-[![homebridge-wyze-smart-home: Wyze Connected Home plugin for Homebridge](https://github.com/jfarmer08/homebridge-wyze-smart-home/blob/main/logo.png?raw=true)](https://github.com/jfarmer08/homebridge-wyze-smart-home)
+[![homebridge-wyze-smart-home: Wyze Connected Home plugin for Homebridge](https://github.com/identd113/homebridge-wyze-smart-home/blob/main/logo.png?raw=true)](https://github.com/identd113/homebridge-wyze-smart-home)
 
-[Major Feature Backlog/Status](https://github.com/jfarmer08/homebridge-wyze-smart-home/discussions/224)
+**[Project history](#history)** and **[timeline](#timeline)**: from misenhower's 2020 plugin to the current release.
 
+> **Coming soon:** gun safe support.
 
-# Funding   [![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg?style=flat-square&maxAge=2592000)](https://www.paypal.com/paypalme/AllenFarmer) [![Donate](https://img.shields.io/badge/Donate-Venmo-blue.svg?style=flat-square&maxAge=2592000)](https://venmo.com/u/Allen-Farmer) [![Donate](https://img.shields.io/badge/Donate-Cash_App-blue.svg?style=flat-square&maxAge=2592000)](https://cash.app/$Jfamer08)
-If you like what I have done here and want to help I would recommend that you firstly look into supporting Homebridge. None of this could happen without them.
+## What's new in 2.0.0-beta.4
 
-After you have done that if you feel like my work has been valuable to you I welcome your support through Paypal, Venmo or Cash App.
+> [!WARNING]
+> **Breaking change: the Privacy switch is now on when the camera is off.** It used to be on when the camera was on, the opposite of its name. Turning Privacy **on** now powers the camera **off**, and turning it off powers it on. There is no setting to keep the old direction. **Any scene, automation or Siri phrase that uses a camera's Privacy switch now does the opposite.** Check each one after you update: where it turned Privacy on to switch the camera on, it must turn Privacy off, and the other way round.
+
+**New in HomeKit**
+- **Motion, Sound and AI sensors for your cameras.** Each camera gets a Motion Sensor and a Sound Sensor when its recent events show them, and cameras on a Wyze plan with AI detection also get Person, Vehicle, Pet and Package sensors (Face if you ask for it). Use them in HomeKit automations: turn on a light when a person is seen, or notify you about a package. They appear by themselves, so HomeKit may start sending notifications for them. Turn any of them off per camera.
+- **Night vision switches for your cameras** (optional, per camera): Night Vision and Night Vision Auto. The Wyze cloud does not offer this setting, so the plugin asks the camera directly over your home network. See [Cameras and doorbells](#cameras-and-doorbells) for what it needs.
+- **A camera that is switched off shows a black picture with a crossed-out red dot** in the Home app, instead of its last picture, which looked live.
+
+**New in the settings page**
+- **One card per camera** under the settings form holds all of that camera's options: its extra HomeKit switches (garage door, spotlight, floodlight, siren, notifications, motion detection, night vision) as checkboxes, and the sensors it was found to have. The sensors panel shows what each camera has, lets you switch each sensor on or off, and warns when a camera's sound recording is off in Wyze (Wyze lists no sound events then). A choice is saved by Homebridge's own UI, like the form's Save button. It also has a button that opens the camera test page when that is on.
+- **Each camera card shows its Cam Plus plan,** and the log tells you about a camera with no plan, a lapsed plan, or one that ends within 14 days.
+
+**New: a camera test page** (optional, off by default). It tests each camera directly over your home network, lists devices the plugin does not support yet and, for one of them, collects a read-only report and opens the add-a-device form on GitHub with it filled in. Turn it on with `advanced.webServerPort`; see [Camera test page](#advanced-settings-and-when-to-use-them).
+
+**Better**
+- **Fewer requests to Wyze:** the properties of all cameras and lights are read in one request per refresh, not one request each.
+- **Example configs:** the [minimum, recommended and maximum configs](#configuration) below show what to write and what each one adds, and the [advanced settings](#advanced-settings-and-when-to-use-them) say when each is worth changing.
+- **Safer, tidier package:** the published package holds only what it needs (it no longer carries unused libraries), and the project is tested and linted on every change.
+
+Needs `wyze-api` 2.0.0-beta.4, which installs with the plugin. Everything since the last published beta, 2.0.0-beta.3, is in this release (an earlier 2.0.0-beta.4 was prepared but never published; its number is reused here). The full list is in the [change log](CHANGELOG.md), and the notes for maintainers are in [docs/releases/2.0.0-beta.4.md](docs/releases/2.0.0-beta.4.md). Going back: `npm install homebridge-wyze-smart-home@2.0.0-beta.3` (the Privacy switch then has its old direction again).
+
+## Support
+
+If this plugin is useful to you, please look into supporting [Homebridge](https://github.com/sponsors/homebridge) first. None of this could happen without them.
+
+Questions and bug reports: [open an issue](https://github.com/identd113/homebridge-wyze-smart-home/issues).
+
+## Thanks
+
+This plugin stands on other people's work:
+
+- [misenhower](https://github.com/misenhower) wrote the original [homebridge-wyze-connected-home](https://github.com/misenhower/homebridge-wyze-connected-home) plugin in 2020, where all of this started.
+- [jfarmer08](https://github.com/jfarmer08) built this plugin and its [wyze-api](https://github.com/identd113/wyze-api) library from 2022 and maintained them for years.
+- [SecKatie](https://github.com/SecKatie) maintains [wyzeapy](https://github.com/SecKatie/wyzeapy), the source of the newer camera calls (Pan v4, Floodlight Pro, Battery Cam Pro, OG).
+- [mrlt8](https://github.com/mrlt8) maintains [docker-wyze-bridge](https://github.com/mrlt8/docker-wyze-bridge), whose camera model research we compare against.
+- [shauntarves](https://github.com/shauntarves) wrote [wyze-sdk](https://github.com/shauntarves/wyze-sdk), a Python SDK we used for reference.
+- [JoshuaMulliken](https://github.com/JoshuaMulliken/ha-wyzeapi) and [noelportugal](https://github.com/noelportugal/wyze-node) for the Home Assistant integration and the Node library that inspired early work.
+- Everyone in [CONTRIBUTORS.md](CONTRIBUTORS.md) who fixed bugs and added devices.
+
+**Looking for Home Assistant?** Please check out SecKatie's [ha-wyzeapi](https://github.com/SecKatie/ha-wyzeapi) integration.
+
+### People who confirmed devices
+
+Thank you to everyone who tested a device and told us it works. Each name was added when a maintainer checked their report. If you would rather not be listed, say so on your report and we will take you off.
+
+<!-- confirmed-by -->
+<!-- /confirmed-by -->
+
+## Requirements
+- Node.js 22 or newer (2.0.0-beta.3 and later). Homebridge 2.x already requires it; on Homebridge 1.x, update Node first.
+- Homebridge 1.8.5 or newer on the 1.x line, or Homebridge 2.x. Homebridge 1.x supports Node 22 only from 1.8.5 (and Node 24 from 1.11.1, and no 1.x release supports Node 26), so an older 1.x cannot run this plugin's Node 22 requirement.
+- The plugin installs the matching `wyze-api` automatically and checks its version at startup. If the version is wrong, or no Wyze `username` is configured, the log shows a `[FATAL]` message and the plugin stays idle without removing your cached accessories.
 
 ## Supported Devices
-- Light Bulb (White, White V2)
-- Light Strips (Light Strip, Light Strip Pro)
-- Color Bulb (Mesh Light A19, BR30, A19 v2)
-- Plug
-- Outdoor Plug
-- V1 & V2 Contact Sensor (Status / Battery)
-- V1 & V2 Motion Sensor (Status / Battery)
-- Temperature & Humidity Sensor (Status / Battery)
-- Leak Sensor (Status / Battery)
-- Lock (Battery / Door Status / Control)
-- Lock Bolt v2 / Palm Lock (Battery / Door Status / Control)
-- Camera v1, v2, v3, v3 Pro, v4 (on/off, Siren, Floodlight, Garage Door)
-- Cam Pan, Pan v2, Pan v3 (on/off, Siren)
-- Outdoor Cam, Outdoor Cam 2
-- Wall Switch
-- Home Monitoring System (HMS)
-- Thermostat
+
+**Status key:** ✅ tested on real hardware by the current maintainers · 🟢 supported, carried over from earlier releases · 🟡 registered but not yet verified on hardware (it should show up in HomeKit; please report what works) · 🔵 confirmed working by a user report that a maintainer checked (on a row with several model codes, the 🔵 sits next to the code). From least to most verified: 🟡 registered only, 🟢 supported, 🔵 confirmed by a user, ✅ confirmed by a maintainer.
+
+### Supported hardware
+
+Open a group to see its models. Each **report** link opens the device report form with that device already picked, for telling us whether it works.
+
+<details>
+<summary><strong>Cameras</strong> (18)</summary>
+
+| Camera | Model code | Controls in HomeKit | Live view / snapshots | Status |
+|---|---|---|---|---|
+| Cam v1 | `WYZEC1` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Cameras%20-%20Cam%20v1%20%28WYZEC1%29&origin=readme) | Privacy, plus Siren / Floodlight / Garage switches per camera in config | WebRTC | 🟢 |
+| Cam v2 | `WYZEC1-JZ` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Cameras%20-%20Cam%20v2%20%28WYZEC1-JZ%29&origin=readme) | Privacy, plus the same optional switches | WebRTC | 🟢 |
+| Cam v3 (and Floodlight Cam) | `WYZE_CAKP2JFUS` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Cameras%20-%20Cam%20v3%20%2F%20Floodlight%20Cam%20%28WYZE_CAKP2JFUS%29&origin=readme) | Privacy, plus the same optional switches | WebRTC, snapshots and audio (if the camera's microphone is on) | ✅ |
+| Cam v3 Pro | `HL_CAM3P` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Cameras%20-%20Cam%20v3%20Pro%20%28HL_CAM3P%29&origin=readme) | Privacy, plus the same optional switches | WebRTC | 🟢 |
+| Cam v4 | `HL_CAM4` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Cameras%20-%20Cam%20v4%20%28HL_CAM4%29&origin=readme) | Privacy, plus the same optional switches | WebRTC | 🟢 |
+| Cam Pan | `WYZECP1_JEF` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Cameras%20-%20Cam%20Pan%20%28WYZECP1_JEF%29&origin=readme) | Privacy, Siren | WebRTC | 🟢 |
+| Cam Pan v2 | `HL_PAN2` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Cameras%20-%20Cam%20Pan%20v2%20%28HL_PAN2%29&origin=readme) | Privacy, Siren | WebRTC | 🟢 |
+| Cam Pan v3 | `HL_PAN3` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Cameras%20-%20Cam%20Pan%20v3%20%28HL_PAN3%29&origin=readme) | Privacy, Siren | WebRTC | 🟢 |
+| Cam Pan v4 | `HL_PAN4` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Cameras%20-%20Cam%20Pan%20v4%20%28HL_PAN4%29&origin=readme) | Privacy, Siren, Spotlight | WebRTC | 🟡 |
+| Cam Pan Pro | `HL_PANP` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Cameras%20-%20Cam%20Pan%20Pro%20%28HL_PANP%29&origin=readme) | Appears as a camera | WebRTC | 🟡 |
+| Bulb Cam | `HL_BC` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Cameras%20-%20Bulb%20Cam%20%28HL_BC%29&origin=readme) | Light | WebRTC | 🟡 |
+| Cam Outdoor | `WVOD1` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Battery%20cameras%20-%20Cam%20Outdoor%20%28WVOD1%29&origin=readme) | Privacy | WebRTC | 🟢 |
+| Cam Outdoor v2 | `HL_WCO2` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Battery%20cameras%20-%20Cam%20Outdoor%20v2%20%28HL_WCO2%29&origin=readme) | Privacy | WebRTC | 🟢 |
+| Cam Floodlight Pro | `LD_CFP` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Cameras%20-%20Cam%20Floodlight%20Pro%20%28LD_CFP%29&origin=readme) | Appears as a camera (Privacy; light and siren expected) | WebRTC | 🟡 |
+| Cam Floodlight v2 | `HL_CFL2` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Cameras%20-%20Cam%20Floodlight%20v2%20%28HL_CFL2%29&origin=readme) | Appears as a camera | WebRTC | 🟡 |
+| Battery Cam Pro | `AN_RSCW` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Battery%20cameras%20-%20Battery%20Cam%20Pro%20%28AN_RSCW%29&origin=readme) | Appears as a camera (spotlight and siren expected) | WebRTC | 🟡 |
+| Cam OG | `GW_GC1` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Cameras%20-%20Cam%20OG%20%28GW_GC1%29&origin=readme) | Appears as a camera | WebRTC | 🟡 |
+| Cam OG Telephoto 3x | `GW_GC2` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Cameras%20-%20Cam%20OG%20Telephoto%203x%20%28GW_GC2%29&origin=readme) | Appears as a camera | WebRTC | 🟡 |
+
+Notes on cameras:
+- Wyze cameras serve **one live viewer at a time**. The plugin closes each stream cleanly and shows the last snapshot while a stream is open.
+- **Audio** depends on the camera. Check that its microphone is on in the Wyze app. One of our Cam v3 units stayed silent in HomeKit even though the Wyze app played its sound, and we have not found why; the plugin then carries on with video only. Other cameras (the Doorbell v2, another Cam v3) work.
+- **Pictures** are refreshed every 30 seconds and when Wyze reports new motion (`advanced.snapshotRefreshSeconds`, `advanced.snapshotOnMotion`). Each refresh is a short live connection, so a Wyze app view of the same camera may be interrupted.
+- The Doorbell v2 press arrives from Wyze's cloud event list, so it can lag a few seconds. Turn on notifications for the doorbell in the Home app.
+- Extra switches (`garage`, `spotlight`, `floodlight`, `siren`, `notifications`, `motionDetection`, `nightVision`) are set per camera under `cameras` in the config, or by ticking them on the camera's card on the plugin's settings page (below the settings form), which saves them the same way.
+- **Night vision** (`nightVision`, per camera) adds two switches, **Night Vision** (always on) and **Night Vision Auto**; with both off, night vision is off. The Wyze cloud does not offer this setting for these cameras, so the plugin asks the camera directly over your home network (through `wyze-api`). Homebridge therefore has to be on the same network as the camera, and only cameras that answer there work: the Cam v2, Cam v3 and Doorbell v2 are tested. A change takes a few seconds and the Wyze app cannot watch that camera meanwhile. The plugin reads the setting about 20 seconds after start and then every 30 minutes, since it can also be changed in the Wyze app. It needs a `wyze-api` version that has `setCameraNightVision`; with an older one, the log says to update.
+- **Motion Sensor and Sound Sensor:** each camera that has the events gets a HomeKit motion sensor, for automations, and a second one named Sound. They turn on when Wyze's event list shows a new motion or sound event less than 30 seconds old, and stay on for 2 minutes counted from the time of the event itself (not from when the plugin noticed it, which is several seconds later), with a newer event extending it. `advanced.sensorHoldSeconds` changes the 2 minutes. The events come from Wyze's cloud, so expect a delay of up to about 10 seconds, and a camera without a Wyze plan records at most one motion event about every 5 minutes. By default (`auto`) a sensor is added only if the camera's last week of events shows events of that kind, so a camera with no plan gets none. Set `motionSensor` or `soundSensor` for a camera to `on` to always have it, or `off` to never have it. With the Sound Sensor on for a camera, a sound no longer switches that camera's Motion Sensor or refreshes its picture. The sensors are added a few seconds after Homebridge starts, once Wyze has answered.
+- **Detection sensors (Person, Vehicle, Pet, Package):** a camera whose Wyze plan includes AI detection also gets a HomeKit sensor for each of these labels, for automations such as turning on a light when a person is detected. They follow the same rules as the Motion Sensor: on for a labelled event less than 30 seconds old, and off after the same hold time without another, and a label Wyze adds a few seconds after the event still counts while the event is fresh. By default a sensor is added for each label the camera's last week of events carries, so a camera without AI detection gets none and no camera gets more than these four. Set `detections` for a camera to a list such as `["person", "pet"]` to have exactly those, or `["none"]` to have none. The **Face** label (it needs face recognition turned on in the Wyze app) is never added by itself: add `"face"` to a camera's `detections` to get it. At startup the log lists the labels each camera's events carry, and says if Face events exist, so you can see what is available before choosing. The plugin's settings page in the Homebridge UI also has a **Detected sensors** panel: for each camera it lists the labels found, ticks what the current setting gives, marks any that are new, and every camera also has **Motion** and **Sound** boxes that work the same way (unticking one sets that camera's `motionSensor` or `soundSensor` to `off`), and a button saves your ticks into that camera's `detections`, `motionSensor` and `soundSensor` (or takes them back to automatic). The plugin only leaves a note of what it found, in `homebridge-wyze-smart-home/detected-sensors.json` under Homebridge's storage folder; the page does the saving through the Homebridge UI, and Homebridge needs a restart to apply it. The page checks every change before it saves it (plain lower-case item names, no repeats, nothing but that camera's `detections`, `motionSensor` and `soundSensor` altered) and saves nothing if a check fails or cannot finish; the plugin likewise writes nothing to its note unless the entry passes its checks. If Wyze has **sound recording** turned off for a camera (it reads the camera's `P1048` setting once at startup), the panel still shows its Sound pill but greyed out and unclickable, with a warning: Wyze lists no sound events for that camera, so a Sound sensor could not fire. Turn sound recording on in the Wyze app and restart Homebridge. Cameras that don't report the setting show no warning. Each camera card also says which **Cam Plus plan** covers it ("Cam Plus: Annual Plan, until 2027-03-03") or that it has none; without one Wyze lists about one event per 5 minutes, so the Motion and Sound sensors can lag or skip. The plugin looks the plans up once at startup (wyze-api `getCamPlusPlans`), saves the result in the same note, and logs a warning for a camera with no plan, a lapsed plan, or a plan ending within 14 days (a camera on a live plan gets an info line with its end date). Above the cards the panel also has one line per live plan: its seats used, the cameras on it, its end date, and "Ending soon" within 14 days. Wyze lists no features for a plan, so this only reports who has one; sensors are still added from the events a camera actually has, not from its plan. The panel fills in a minute or so after Homebridge starts.
+- **Floodlight:** a camera with a floodlight accessory plugged in (a Cam v3 with the Wyze floodlight) gets a Floodlight switch on its own, with nothing to configure. The Home app shows it with the camera; in the camera's settings you can choose to show it as a separate tile.
+- Cam Pan v4 and Bulb Cam come from [SecKatie/wyzeapy](https://github.com/SecKatie/wyzeapy) and have not been tried on hardware here yet.
+
+</details>
+
+<details>
+<summary><strong>Doorbells</strong> (4)</summary>
+
+| Camera | Model code | Controls in HomeKit | Live view / snapshots | Status |
+|---|---|---|---|---|
+| Video Doorbell v2 | `HL_DB2` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Doorbells%20-%20Video%20Doorbell%20v2%20%28HL_DB2%29&origin=readme) | HomeKit doorbell: press notification. No Privacy switch (Wyze does not let it be powered off) | WebRTC at 640x480, with audio | ✅ |
+| Video Doorbell | `WYZEDB3` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Doorbells%20-%20Video%20Doorbell%20%28WYZEDB3%29&origin=readme) | Appears as a camera only; no ring notification yet | WebRTC | 🟡 |
+| Video Doorbell Pro | `GW_BE1` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Doorbells%20-%20Video%20Doorbell%20Pro%20%28GW_BE1%29&origin=readme) | Appears as a camera only; no ring notification yet | WebRTC | 🟡 |
+| Video Doorbell Pro 2 | `AN_RDB1` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Doorbells%20-%20Video%20Doorbell%20Pro%202%20%28AN_RDB1%29&origin=readme) | Appears as a camera only; no ring notification yet | WebRTC | 🟡 |
+
+</details>
+
+<details>
+<summary><strong>Locks</strong> (3)</summary>
+
+| Device | Model code | Controls in HomeKit | Status |
+|---|---|---|---|
+| Lock | `YD.LO1` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Locks%20-%20Lock%20%28YD.LO1%29&origin=readme) | Lock/unlock, door status, battery | 🟢 |
+| Lock Bolt v2 | `DX_LB2` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Locks%20-%20Lock%20Bolt%20v2%20%28DX_LB2%29&origin=readme) | Lock/unlock, door status, battery | 🟢 |
+| Palm Lock | `DX_PVLOC` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Locks%20-%20Palm%20Lock%20%28DX_PVLOC%29&origin=readme) | Lock/unlock, door status, battery (status refreshed every 10 s) | ✅ |
+
+</details>
+
+<details>
+<summary><strong>Lights and bulbs</strong> (3)</summary>
+
+| Device | Model code | Controls in HomeKit | Status |
+|---|---|---|---|
+| Light Bulb (White, White v2) | `WLPA19` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Lights%20-%20Bulb%20White%20%28WLPA19%29&origin=readme), `HL_HWB2` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Lights%20-%20Bulb%20White%20v2%20%28HL_HWB2%29&origin=readme) | On/off, brightness, colour temperature | 🟢 |
+| Mesh / Color Bulb (A19, BR30, A19 v2) | `WLPA19C` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Lights%20-%20Color%20Bulb%20A19%20%28WLPA19C%29&origin=readme), `HL_BR30C` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Lights%20-%20Color%20Bulb%20BR30%20%28HL_BR30C%29&origin=readme), `HL_A19C2` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Lights%20-%20Color%20Bulb%20A19%20v2%20%28HL_A19C2%29&origin=readme) | On/off, brightness, colour, colour temperature | 🟢 |
+| Light Strip, Light Strip Pro | `HL_LSL` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Lights%20-%20Light%20Strip%20%28HL_LSL%29&origin=readme), `HL_LSLP` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Lights%20-%20Light%20Strip%20Pro%20%28HL_LSLP%29&origin=readme) | On/off, brightness, colour | 🟢 |
+
+</details>
+
+<details>
+<summary><strong>Plugs and switches</strong> (3)</summary>
+
+| Device | Model code | Controls in HomeKit | Status |
+|---|---|---|---|
+| Plug | `WLPP1` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Plugs%20and%20switches%20-%20Plug%20%28WLPP1%29&origin=readme), `WLPP1CFH` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Plugs%20and%20switches%20-%20Plug%20%28alternate%20model%29%20%28WLPP1CFH%29&origin=readme) | On/off | 🟢 |
+| Outdoor Plug | `WLPPO-SUB` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Plugs%20and%20switches%20-%20Outdoor%20Plug%20%28WLPPO-SUB%29&origin=readme) | On/off | 🟢 |
+| Wall Switch | `LD_SS1` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Plugs%20and%20switches%20-%20Wall%20Switch%20%28LD_SS1%29&origin=readme) | On/off | 🟢 |
+
+</details>
+
+<details>
+<summary><strong>Sensors</strong> (4)</summary>
+
+| Device | Model code | Controls in HomeKit | Status |
+|---|---|---|---|
+| Contact Sensor v1, v2 | `DWS2U` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Sensors%20-%20Contact%20Sensor%20v1%20%28DWS2U%29&origin=readme), `DWS3U` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Sensors%20-%20Contact%20Sensor%20v2%20%28DWS3U%29&origin=readme) | Open/closed, battery | 🟢 |
+| Motion Sensor v1, v2 | `PIR2U` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Sensors%20-%20Motion%20Sensor%20v1%20%28PIR2U%29&origin=readme), `PIR3U` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Sensors%20-%20Motion%20Sensor%20v2%20%28PIR3U%29&origin=readme) | Motion, battery | 🟢 |
+| Temperature & Humidity Sensor | `TH3U` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Sensors%20-%20Temperature%20%26%20Humidity%20Sensor%20%28TH3U%29&origin=readme) | Temperature, humidity, battery | 🟢 |
+| Leak Sensor | `WS3U` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Sensors%20-%20Leak%20Sensor%20%28WS3U%29&origin=readme) | Leak, battery | 🟢 |
+
+</details>
+
+<details>
+<summary><strong>Climate and security</strong> (3)</summary>
+
+| Device | Model code | Controls in HomeKit | Status |
+|---|---|---|---|
+| Home Monitoring System | `GW3U` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Sensors%20-%20Home%20Monitoring%20System%20%28GW3U%29&origin=readme) | Arm/disarm | 🟢 |
+| Thermostat | `CO_EA1` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Climate%20-%20Thermostat%20%28CO_EA1%29&origin=readme) | Mode, target / heat / cool temperatures, current temperature and humidity | 🟢 |
+| Thermostat Room Sensor | `CO_TH1` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Climate%20-%20Thermostat%20Room%20Sensor%20%28CO_TH1%29&origin=readme) | Temperature, humidity, battery | 🟢 |
+
+</details>
+
+<details>
+<summary><strong>Vacuum and sprinklers</strong> (2)</summary>
+
+| Device | Model code | Controls in HomeKit | Status |
+|---|---|---|---|
+| Robot Vacuum | `JA_RO2` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Appliances%20-%20Robot%20Vacuum%20%28JA_RO2%29&origin=readme) | Start/stop, fan speed, battery and charging state, fault codes, per-room switches | 🟢 |
+| Sprinkler Controller | `BS_WK1` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Appliances%20-%20Sprinkler%20Controller%20%28BS_WK1%29&origin=readme) | Zone valves: start/stop, duration, remaining time | 🟢 |
+
+</details>
 
 ## Not Yet Supported
-The following Wyze products are recognized by the plugin but have no HomeKit support yet:
-- Cameras: Battery Cam Pro, Cam OG, Cam OG Telephoto 3x, Cam Floodlight Pro, Cam Pan Pro
-- Doorbells: Video Doorbell, Video Doorbell Pro, Video Doorbell Pro 2
-- Plugs: Outdoor Plug (main unit)
-- Sensors: Chime Sensor, Room Sensor (thermostat companion), Keypad
-- Locks: Lock Bolt (original BLE-only version)
-- Sprinkler Controller
 
-The following newer Wyze products have no model codes in the plugin yet:
-- Cam Pan v4, Bulb Cam, Window Cam, Battery Video Doorbell, Duo Cam Doorbell
-- Lamp Socket / Lamp Socket v2, Night Light, Surge Protector
+Have a Wyze device that is not on either list? [Tell us about it](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml). The form asks what the device is and for the information the plugin has about it, which is usually enough to add support.
 
-The following Wyze products are not applicable to HomeKit:
-- Robot Vacuum, Cordless Vacuum, Scales, Watch, Headphones, Air Purifier
+**Effort** is our rough estimate. **Easy** means another open-source Wyze project already handles the device, so we can port from it; **Hard** means it needs a different protocol; **Unknown** means we found no reference implementation.
+
+<details open>
+<summary><strong>Devices we do not support yet</strong> (10)</summary>
+
+| Device | Model code | Why it isn't supported | Effort |
+|---|---|---|---|
+| Air Purifier | `CO_AP1` [report](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml&device=Appliances%20-%20Air%20Purifier%20%28CO_AP1%29&origin=readme) | No accessory class. [wyzeapy](https://github.com/SecKatie/wyzeapy) reads on/off, fan mode and air quality, and HomeKit has matching services | Medium |
+| Keypad | — | It is an accessory of the lock and HomeKit has no keypad service. [wyze-sdk](https://github.com/shauntarves/wyze-sdk) reads its enable setting and events | Unknown |
+| Lamp Socket / Lamp Socket v2 | — | No model code yet | Easy |
+| Lock Bolt (original, Bluetooth only) | — | Bluetooth only, no cloud control | Hard |
+| Window Cam | `GW_WC` | No accessory yet. [docker-wyze-bridge](https://github.com/mrlt8/docker-wyze-bridge) lists it as not supported | Unknown |
+| Battery Video Doorbell | `ME_DB1`, `MR_BVD` | No accessory yet. [ha-wyzeapi](https://github.com/SecKatie/ha-wyzeapi) finds the device but the camera stays unavailable. The two codes may be the same product | Unknown |
+| Duo Cam Doorbell | `GW_DBD` | No accessory yet. It has no `iot-power` property, and [docker-wyze-bridge](https://github.com/mrlt8/docker-wyze-bridge) users get snapshots but no stream | Unknown |
+| Solar Cam Pan | `ME_WCO3` | No accessory yet. [wyzeapy](https://github.com/SecKatie/wyzeapy) has an open pull request that reads and controls it, but its live view uses Agora, not the WebRTC stream the plugin uses | Hard |
+| Solar Cam (October 2026) | — | No model code yet | Unknown |
+| Night Light, Surge Protector | — | No model codes yet | Unknown |
+
+</details>
+
+Not applicable to HomeKit, or not planned: Cordless Vacuum, Scales, Watch, Headphones, Chimes.
 
 For more information about our version updates, please check our [change log](CHANGELOG.md).
 
 ## Configuration
 
-Use the settings UI in Homebridge Config UI X to configure your Wyze account, or manually add the following to the platforms section of your config file:
+The easiest way is the settings screen in Homebridge Config UI X. You can also edit the `platforms` section of `config.json` yourself.
 
-```js
+There are three example configs below: [minimum](#minimum-config), [recommended](#recommended-config) and [maximum](#maximum-config), followed by a [table of what each one adds](#what-each-config-adds). Start with the minimum and add lines as you need them.
+
+### Minimum config
+
+Four fields are **required**. With only these, the plugin finds your Wyze devices and adds them to Homebridge automatically, using the default settings:
+
+```json
 {
   "platforms": [
     {
       "platform": "WyzeSmartHome",
       "name": "Wyze",
-      "username": "YOUR_EMAIL",
-      "password": "YOUR_PASSWORD",
-      "keyId": "",
-      "apiKey": "",
-      "hms": false,
-      "lowBatteryPercentage": 30,
-      "filterDeviceTypeList": ["OutdoorPlug","Plug"],
-      "filterByMacAddressList": ["MAC_ADDRESS_1","MAC_ADDRESS_2"],
-      "garageDoorAccessory": ["MAC_ADDRESS_1","MAC_ADDRESS_2"],
-      "spotLightAccessory": ["MAC_ADDRESS_1","MAC_ADDRESS_2"],
-      "floodLightAccessory": ["MAC_ADDRESS_1","MAC_ADDRESS_2"],
-      "sirenAccessory": ["MAC_ADDRESS_1","MAC_ADDRESS_2"],
-      "notificationAccessory": ["MAC_ADDRESS_1","MAC_ADDRESS_2"],
-      "securityRefreshInterval": 10000
+      "auth": {
+        "username": "YOUR_EMAIL",
+        "password": "YOUR_PASSWORD",
+        "keyId": "YOUR_KEY_ID",
+        "apiKey": "YOUR_API_KEY"
+      }
     }
   ]
 }
 ```
 
-Supported devices will be discovered and added to Homebridge automatically.
+The API key is all most accounts need, including accounts with an authenticator app for 2-factor authentication. If Wyze does ask for a code, add the current 6-digit code as `"mfaCode"` inside `auth` (see below). `totpSecret` is deprecated and no longer used.
 
-### Required Fields
+### Required fields
 
-* **`username`** &ndash; App email address
-* **`password`** &ndash; App password
-* **`apiKey`** &ndash; Navigate to [this portal](https://developer-api-console.wyze.com/)
-* **`keyId`** &ndash; Navigate to [this portal](https://developer-api-console.wyze.com/), and click Login to sign in to your Wyze account.
-Note: Ensure that the login info you are using matches the info you use when logLevel into the Wyze app.
-Once you’ve signed in, you’ll be automatically redirected back to the developer page.
-Click Create an API key for your API key to be created.
-Once created, you can click view to see the entire key.
-You should receive an email that a new API key has been generated.
-Once you have the API key, you can use it in your script to get the access token and refresh token.
+| Field | What to enter |
+|---|---|
+| `auth.username` | Your Wyze account email address. |
+| `auth.password` | Your Wyze account password. |
+| `auth.keyId` | From the [Wyze developer portal](https://developer-api-console.wyze.com/). |
+| `auth.apiKey` | From the same portal. |
 
-### Optional Fields
+To get the Key ID and API key, sign in to the [Wyze developer portal](https://developer-api-console.wyze.com/) with the same account you use in the Wyze app, then choose **Create an API key**. Wyze emails you to say a key was created. Use **view** to see the full key.
 
-* **`hms`** &ndash; Set to `true` to enable the Home Monitoring System (HMS) gateway accessory. Defaults to `false`.
-* **`refreshInterval`** &ndash; Defines how often the status of the devices will be polled in milliseconds (e.g., `"refreshInterval": 60000` will check the status of your devices' status every 60 seconds). Defaults to 60 seconds.
-* **`phoneId`** &ndash; The phone id used by the Wyze App. This value is just found by intercepting your phone's traffic. If no `phoneId` is specified, a default value will be used.
-* **`logLevel`** &ndash; If no `logLevel` is specified, a default value will be used.
-* **`apiLogEnabled`** &ndash; If no `apiLogEnabled` is specified, a default value will be used.
-* **`authApiKey`** &ndash; If no `authApiKey` is specified, a default value will be used.
-* **`appName`** &ndash; If no `appName` is specified, a default value will be used.
-* **`appVer`** &ndash; If no `appVer` is specified, a default value will be used.
-* **`appVersion`** &ndash; If no `appVersion` is specified, a default value will be used.
-* **`userAgent`** &ndash; If no `userAgent` is specified, a default value will be used.
-* **`sc`** &ndash; If no `sc` is specified, a default value will be used.
-* **`sv`** &ndash; If no `sv` is specified, a default value will be used.
-* **`persistPath`** &ndash; If no `persistPath` is specified, a default value will be used.
-* **`refreshTokenTimerEnabled`** &ndash; If no `refreshTokenTimerEnabled` is specified, a default value will be used.
-* **`lowBatteryPercentage`** &ndash; Defines when to show devices with low battery (e.g., `"lowBatteryPercentage": 30`). Defaults to 30%.
-* **`securityRefreshInterval`** &ndash; How often (in milliseconds) to fast-poll lock devices (Wyze Lock, Lock Bolt v2, Palm Lock) for state changes independently of the main refresh cycle (e.g., `"securityRefreshInterval": 10000`). Defaults to 10 seconds.
-* **`pluginLoggingEnabled`** &ndash; Enables additional plugin-level debug logging, including lock fast-poll summaries. Defaults to false.
+### Recommended config
 
-## Other Info
+What most people want: the credentials kept out of `config.json`, the extra switches for the cameras that have the hardware, quicker live view, and the noisy or unused devices hidden. Change or delete any line that does not apply to you:
 
-Special thanks to the following projects for reference and inspiration:
+```json
+{
+  "platforms": [
+    {
+      "platform": "WyzeSmartHome",
+      "name": "Wyze",
+      "auth": {
+        "secretsFile": "/path/to/wyze-secrets.json"
+      },
+      "cameras": [
+        { "mac": "MAC_ADDRESS_1", "name": "Garage cam", "garage": true, "siren": true },
+        { "mac": "MAC_ADDRESS_2", "name": "Front door", "notifications": true }
+      ],
+      "excludes": { "macs": ["MAC_ADDRESS_OF_A_DEVICE_YOU_DO_NOT_WANT"] },
+      "logging": { "level": "info" },
+      "advanced": { "warmLiveView": true }
+    }
+  ]
+}
+```
 
-- [ha-wyzeapi](https://github.com/JoshuaMulliken/ha-wyzeapi), a Wyze integration for Home Assistant.
-- [wyze-node](https://github.com/noelportugal/wyze-node), a Node library for the Wyze API.
+`wyze-secrets.json` is a private file (mode 600) holding `username`, `password`, `keyId`, `apiKey`. See `auth.secretsFile` below.
 
-Thanks to [misenhower](https://github.com/misenhower/homebridge-wyze-connected-home) for the original Wyze Homebridge plugin, and thanks to all [contributors](CONTRIBUTORS.md) who have volunteered their time to help fix bugs and add support for more devices and features.
+### Maximum config
 
-This plugin is an actively maintained fork of misenhower's original [Wyze Homebridge Plugin](https://github.com/misenhower/homebridge-wyze-connected-home) project.
+Every setting a person normally changes, set to a value that differs from its default (or, for the on/off ones, switched on). It is a reference for what exists, not something to copy as it is: several lines add tiles and cost extra requests. `deviceTypeOverrides` and the custom base URLs are left out on purpose, as they are for troubleshooting only.
+
+```json
+{
+  "platforms": [
+    {
+      "platform": "WyzeSmartHome",
+      "name": "Wyze",
+      "auth": {
+        "username": "YOUR_EMAIL",
+        "password": "YOUR_PASSWORD",
+        "keyId": "YOUR_KEY_ID",
+        "apiKey": "YOUR_API_KEY"
+      },
+      "polling": {
+        "refreshInterval": 60000,
+        "lowBatteryPercentage": 20
+      },
+      "securityRefreshInterval": 10000,
+      "cameras": [
+        {
+          "mac": "MAC_ADDRESS_1",
+          "name": "Garage cam",
+          "garage": true,
+          "spotlight": true,
+          "floodlight": true,
+          "siren": true,
+          "notifications": true,
+          "motionDetection": true,
+          "nightVision": true,
+          "motionSensor": "on",
+          "soundSensor": "on",
+          "detections": ["person", "vehicle", "pet", "package", "face"]
+        },
+        {
+          "mac": "MAC_ADDRESS_2",
+          "name": "Nursery",
+          "motionSensor": "off",
+          "soundSensor": "on",
+          "detections": ["none"]
+        }
+      ],
+      "thermostat": { "exposeRoomSensors": true, "mode": "heat-only" },
+      "vacuum": { "perRoomSwitches": true },
+      "hms": { "enabled": true },
+      "excludes": {
+        "macs": ["MAC_ADDRESS_OF_A_DEVICE_YOU_DO_NOT_WANT"],
+        "types": ["Plug"]
+      },
+      "logging": { "level": "debug", "disableRedaction": false },
+      "advanced": {
+        "snapshotRefreshSeconds": 60,
+        "snapshotOnMotion": true,
+        "sensorHoldSeconds": 300,
+        "warmLiveView": true
+      }
+    }
+  ]
+}
+```
+
+Do not use `"logging": { "level": "debug" }` all the time: the logs are long.
+
+### What each config adds
+
+| | Minimum | Recommended | Maximum |
+|---|---|---|---|
+| All devices found and shown | yes | yes | yes |
+| Camera live view, pictures every 30 s, Privacy switch | yes | yes | yes |
+| Motion, Sound and AI sensors, added automatically when the camera's events show them | yes | yes | yes (set by hand per camera) |
+| Credentials | in `config.json` | in a private file | in `config.json` |
+| 2-factor authentication | only if Wyze asks for a code: `mfaCode` | not needed | `mfaCode` |
+| Garage, light, siren, notification and motion-detection switches on a camera | no | the ones you list | all of them |
+| Face sensor and a fixed list of AI sensors | no | no | yes |
+| Quick Live View (`warmLiveView`) | no | yes | yes |
+| Devices hidden (`excludes`) | none | the ones you list | by MAC and by type |
+| Thermostat room sensors, mode limit | no | no | yes |
+| Vacuum room switches | no | no | yes |
+| Home Monitoring System | no | no | yes (needs a subscription) |
+| Slower polling, lower battery warning, longer sensor hold | defaults | defaults | changed |
+
+Cameras not listed under `cameras` still appear, with the camera and its Privacy switch (the Doorbell v2 has no Privacy switch). The switch is **on when the camera is off**: turning Privacy on powers the camera off, and the Home app then shows a black picture with a crossed-out red dot instead of the last picture. Live view of a camera that is off fails.
+
+The Optional fields tables below list every setting with its default.
+
+### Optional fields
+
+**Account**
+
+| Field | Default | What it does |
+|---|---|---|
+| `auth.totpSecret` | none | **Deprecated and ignored.** It used to generate 2-factor codes from the authenticator secret. A value in an existing config is still accepted and the log says it is not used. You can remove it. |
+| `auth.mfaCode` | none | The current 6-digit code from your authenticator app, for when Wyze asks for one at login. It rotates every 30 seconds, so it must be current when Homebridge starts, and it works once. |
+| `auth.secretsFile` | none | Path to a private JSON file (mode 600) holding any of the credentials above, to keep them out of `config.json`. Values in the file override the config. The `WYZE_*` environment variables (for example `WYZE_USERNAME` and `WYZE_PASSWORD`) work too. |
+
+**Polling**
+
+| Field | Default | What it does |
+|---|---|---|
+| `polling.refreshInterval` | `30000` | How often device status is checked, in milliseconds. |
+| `polling.lowBatteryPercentage` | `30` | Battery level that HomeKit reports as low. |
+| `securityRefreshInterval` | `10000` | How often lock devices (Wyze Lock, Lock Bolt v2, Palm Lock) are checked for changes, in milliseconds, separately from the main refresh. Top-level option with no settings-screen field. |
+
+**Devices**
+
+| Field | Default | What it does |
+|---|---|---|
+| `cameras` | none | Extra switches for individual cameras, by `mac`: `garage`, `spotlight`, `floodlight`, `siren`, `notifications`, `motionDetection` and `nightVision`, each `false` unless set, and `motionSensor` and `soundSensor`, each `auto` unless set to `on` or `off`. `detections` is a list of `person`, `vehicle`, `pet`, `package` and `face` (or `none`); empty, the default, is automatic and never includes `face`. `name` is an optional label. A camera with a floodlight accessory needs no entry for the Floodlight switch. |
+| `excludes.macs` | none | Hide devices by MAC address. |
+| `excludes.types` | none | Hide every device of a type, for example `Plug`, `Light` or `Camera`. The settings screen lists the choices. |
+| `hms.enabled` | `false` | Add the Home Monitoring System. Turn it on only with an active HMS subscription. |
+| `thermostat.exposeRoomSensors` | `false` | Also add the thermostat's room sensors. Costs one extra request per thermostat on each refresh. |
+| `thermostat.mode` | `auto` | `heat-only` or `cool-only` hides the modes your system doesn't have. |
+| `vacuum.perRoomSwitches` | `false` | One HomeKit switch per room, for voice commands like "vacuum the kitchen". |
+
+**Logging**
+
+| Field | Default | What it does |
+|---|---|---|
+| `logging.level` | `info` | `error`, `warn`, `info` or `debug`. Use `debug` only when troubleshooting; the logs are long. |
+| `logging.disableRedaction` | `false` | Keep tokens, emails and MAC addresses in the log. Never share a log made this way. |
+
+**Camera pictures and live view** (under `advanced`)
+
+| Field | Default | What it does |
+|---|---|---|
+| `advanced.snapshotRefreshSeconds` | `30` | How often each camera's picture in the Home app is refreshed; `0` turns it off. Each refresh is a short live connection, so a Wyze app view of the same camera may be interrupted. |
+| `advanced.snapshotOnMotion` | `true` | Take a new picture as soon as Wyze reports motion. |
+| `advanced.sensorHoldSeconds` | `120` | How long the Motion, Sound and detection sensors stay on, counted from the time of the event Wyze reports (5 to 3600 seconds). A newer event extends it. Cameras without a Wyze plan report about one event every 5 minutes, so a longer time keeps the tile on between them. |
+| `advanced.warmLiveView` | `false` | "Quick Live View". While the Home app is looking at a camera, the plugin opens a connection to it ahead of time (kept about 45 seconds after the Home app stops asking), so live view starts almost at once. Worth turning on if live view is slow to start. While a camera's connection is open the Wyze app cannot watch it, and all the cameras on screen are connected at once. |
+
+**Camera test page** (under `advanced`)
+
+| Field | Default | What it does |
+|---|---|---|
+| `advanced.webServerPort` | `0` | `0` turns the camera test page off. A port from `1024` to `65535` starts it on that port; ports `1` to `1023` need root and are refused (the log says so). Restart Homebridge after changing it. |
+
+With a port set, the Homebridge log prints a link that ends in `?token=...` when Homebridge starts. Open it from a computer on the same network as your cameras. The page lists your cameras and tests each one directly over your home network, showing each step and what the camera answered. After you press Confirm it can also set a camera's night vision to on, off or auto. The page also has **Sensors** and **Settings** tabs that show what the plugin found for each camera and the options in the Advanced section (picture refresh, refresh on motion, how long the sensors stay on, Quick Live View and this port), read from Homebridge's `config.json` every time, next to what the plugin is running now, with a note when a restart is needed. They are read-only: this page never writes your config. Change them on the plugin's settings screen in Homebridge, which saves them the way Homebridge expects. Your login, the custom URLs and everything else in the file never reach the page. A port from 1 to 1023 is refused. An **Other devices** tab appears when your Wyze account has devices the plugin does not support yet. Each has a **Test and collect report** button that reads what Wyze knows about the device (its property list and device info, and for a camera its devicemgmt answer and a read-only local session). It changes nothing on the device and removes addresses, names and ids from the report. The result comes with **Report this device on GitHub**, which opens the add-a-device form with the model, type and findings filled in, and **Download report (JSON)** to attach when the report is too long for the form. After a test it also offers **Report this camera on GitHub**, which opens this plugin's device report form with the device, versions and a short summary of the test filled in. Nothing is sent until you submit the form on GitHub. It runs in the Homebridge process, so Homebridge has to be on the same network as the cameras. It is plain HTTP with a random token that changes at every restart, and it serves only computers on your local network (a request through a proxy or tunnel is refused). Do not forward the port to the internet. The cameras it can reach are the ones the Wyze device list marks with the `dtls` flag, which covers the Cam v2, Cam v3 and Doorbell v2 tested here. It needs a `wyze-api` that includes the page (the log says if it does not).
+
+Other advanced settings (`deviceTypeOverrides` and custom base URLs) are for troubleshooting and are explained in the settings screen.
+
+### Advanced settings and when to use them
+
+Everything under `advanced` works at its default. Change one only for the reason given here.
+
+| Setting | Change it when | What to expect |
+|---|---|---|
+| `snapshotRefreshSeconds` | The pictures in the Home app are too old (lower it), or the Wyze app keeps getting cut off while you watch a camera (raise it, or set `0`). | Each refresh is a short live connection to the camera, and a camera serves one viewer at a time. `0` turns the regular refresh off. |
+| `snapshotOnMotion` | You want the picture to update the moment motion is seen (leave it on), or you want no extra connections on motion (turn it off). | Off, a motion event no longer triggers a new picture. |
+| `sensorHoldSeconds` | A Motion, Sound or AI tile switches off too soon or lingers too long for your automations. Raise it for cameras without a Wyze plan, which report only about one event every 5 minutes, so the tile stays on between events. Lower it if you want a quick "motion stopped" signal. | Counted from the time of the event on Wyze's clock, between 5 and 3600 seconds. A newer event extends it. |
+| `warmLiveView` | Live view takes several seconds to start. | The plugin opens a connection to a camera ahead of time while the Home app is looking at it, and keeps it about 45 seconds. While it is open the Wyze app cannot watch that camera, and every camera on screen is connected at once. |
+| `webServerPort` | You want to see what a camera answers over your home network, or to change a camera's night vision, from a browser. | Off by default. When on, Homebridge also listens on that port (1024 or higher), serving a page that needs the token printed in the log. Local network only, plain HTTP. |
+| `deviceTypeOverrides` | Wyze has a new product code the plugin does not know yet, and you want to try it as an existing kind of device before official support. | Troubleshooting only. A wrong override can show a device as the wrong kind. Please also [report the new model](https://github.com/identd113/homebridge-wyze-smart-home/issues/new?template=new-device.yml). |
+| `dangerouslyAllowCustomBaseUrls`, `authBaseUrl`, `apiBaseUrl` | You send Wyze traffic through your own proxy or test server. | Off by default, because the plugin otherwise accepts only Wyze's own hosts: your login and token go wherever these point. Do not set them unless you control that server. |
+
+### Older configs
+
+The older flat format (`username`, `password`, `keyId`, `apiKey`, `filterByMacAddressList`, `garageDoorAccessory`, ...) is still accepted. On first start Homebridge converts it to the format above and keeps a copy of your old file next to it as `config.json.pre-2.0.bak`.
+
+## Cameras and doorbells
+
+- **Pairing.** Cameras are separate HomeKit accessories, not part of the bridge. When a camera is discovered, Homebridge's log prints its own setup code ("Please add [Camera name] manually in the Home app"); add each one in the Home app with that code. A camera that is newly recognised after an update (Cam Pan v4, Bulb Cam, Floodlight v2, Doorbell v2) shows up the same way and needs pairing once. Nothing already paired changes.
+- **Live view, snapshots and audio** come from Wyze over WebRTC. A Wyze camera serves **one viewer at a time**, so opening the same camera in the Wyze app, or in a second Home app view, may interrupt the stream. While a live view is open, the tile keeps showing the last snapshot. Audio only arrives if the camera's microphone is switched on in the Wyze app.
+- **Doorbell v2** is a HomeKit doorbell: a press rings the Home app (turn on notifications for it in the Home app). The plugin looks for presses in Wyze's cloud event list every 5 seconds, so the ring can arrive a few seconds late. Its picture is 640x480 (4:3) at 15 frames per second. Wyze doesn't let the doorbell be powered off through its API, so it has no Privacy switch.
+- **Battery cameras** (Cam Outdoor, Cam Outdoor v2, Battery Cam Pro) are woken by every connection, so their picture is taken at startup and when motion is reported, not on a timer (unless you set `advanced.snapshotRefreshSeconds` yourself), and they never get Quick Live View.
+- **Many cameras.** Pictures are taken one at a time, a few seconds each, so with more than about six cameras each one is refreshed less often than every 30 seconds (the log says how often).
+- **Wyze plan limit.** Motion and doorbell events come from Wyze's cloud event list, which depends on your plan: cameras without a Wyze plan record at most one motion event about every 5 minutes (and no person/vehicle tags), and a doorbell without a plan may also miss a press that lands inside that cooldown. Live view and snapshots are not affected.
+
+## Upgrading
+
+- **From 2.0.0-beta.3:** nothing in your config needs to change. The Privacy switch is now reversed (see What's new), and a camera's options are on its card on the settings page instead of the Cameras section of the form. Newly added sensors appear by themselves.
+- **From 2.0.0-beta.2:** nothing in your config needs to change. Update Node.js to 22 or newer first. Newly recognised cameras need pairing (see above).
+- **From 0.5.x or 1.x:** your flat config is converted on first start (see Configuration). Update Node.js to 22 or newer first.
+- If the installed `wyze-api` is older than this plugin needs, the log shows one `[FATAL]` line and the plugin stays inactive without removing your paired accessories.
+
+## Development
+
+```
+git clone https://github.com/identd113/homebridge-wyze-smart-home.git
+cd homebridge-wyze-smart-home
+npm install
+npm test
+npm run lint
+```
+
+- **Tests** are in [`tests/`](tests/). They use stubs for Homebridge and Wyze, so they need no Homebridge install, no network and no Wyze account. CI runs them, and `npm run lint`, on every pull request.
+- **Against a local `wyze-api`:** the plugin depends on the published [wyze-api](https://github.com/identd113/wyze-api). A change that needs an unreleased `wyze-api` fails against the registry copy until it is published. To work on both together, clone `wyze-api` next to this folder and run `npm run dev-link`. A later `npm install` can replace the link, so run it again if the tests start failing on a missing method.
+- **Documentation** for contributors is indexed in [`docs/`](docs/README.md): the design notes, release notes, and archived branches.
+- **Run it in Homebridge:** `npm run start` starts Homebridge from the parent folder with this plugin loaded.
+
+## History
+
+### The story
+
+The plugin began in May 2020 as [homebridge-wyze-connected-home](https://github.com/misenhower/homebridge-wyze-connected-home), written by [misenhower](https://github.com/misenhower). Its README listed four devices (Light Bulb, Plug, Contact Sensor, Motion Sensor), and it already supported two-factor logins through an `mfaCode` setting. Seven npm releases (`0.1.0` to `0.5.1`) went out in five weeks, and the last commit to the repository is `v0.5.1` on 2020-06-14 (`015806c`). Issues kept arriving there until at least November 2024.
+
+In May 2022 [jfarmer08](https://github.com/jfarmer08) started this repository as `homebridge-wyze-smart-home` and carried on the `0.5.x` numbering (first npm release `0.5.10`, 2022-05-18). It is not a GitHub fork, and its first commit (`4a7bb75`, "First Check In") arrived with 21 files, including accessories for lights, locks, sensors and a camera, so what came before it isn't in this repository's history. Over the next year the plugin grew a device at a time: camera on/off in June 2022, more camera models in July, the Home Monitoring System and a thermostat (contributed by Carson Loyal) in December, and siren, floodlight and garage-door controls for cameras in October 2023. The Wyze cloud client was published separately as [wyze-api](https://github.com/identd113/wyze-api) in September 2023.
+
+In 2026 the project moved quickly. Lock Bolt v2 and the Palm Lock arrived in April through Wyze's newer IoT3 API (contributed by identd113), followed the same month by robot-vacuum and sprinkler accessories and a motion sensor on cameras. `2.0.0-beta.1` was published on 2026-04-28 and `2.0.0-beta.2` on 2026-08-29.
+
+In October 2026 jfarmer08 said in [issue #315](https://github.com/wyze-smart-home/homebridge-wyze-smart-home/issues/315) that they could no longer maintain the project, and identd113 offered to take it over.
+
+### Timeline
+
+Each row can be checked against the repository (commit) or the npm registry (release).
+
+| Date | Event | Evidence |
+|---|---|---|
+| 2020-05-07 | Original plugin created; four devices | misenhower repo, npm `0.1.0` |
+| 2020-06-14 | Last release and last commit of the original, `v0.5.1` | `015806c`, npm `0.5.1` |
+| 2022-05-17 | This repository's first commit: lights, plugs, sensors, lock, camera accessory | `4a7bb75` |
+| 2022-05-18 | Thermostat Room Sensor and Temperature/Humidity accessories; first npm release `0.5.10` | `48ebe9d`, npm |
+| 2022-06-21 | Camera (on/off) listed | `9d59a45` |
+| 2022-07-07 | Camera v2, v3, Outdoor and Pan listed | `2e8ff12` |
+| 2022-12-08 | Home Monitoring System accessory | `c9447cf` |
+| 2022-12-15 | Thermostat accessory (Carson Loyal) | `c845eff` |
+| 2023-09-06 | `wyze-api` first published to npm | npm |
+| 2023-10-23 | Camera siren, floodlight and garage-door controls listed | `a43c9a1` |
+| 2026-04-08 | Lock Bolt v2 and Palm Lock (identd113) | `657d5d7` |
+| 2026-04-26 | Vacuum and sprinkler accessories | `8c97a3c` |
+| 2026-04-28 | `2.0.0-beta.1` | npm |
+| 2026-07-21 | `0.5.61`, the last `0.5.x` release | npm |
+| 2026-08-06 | README lists the newer bulb, strip, camera and Pan variants | `a270466` |
+| 2026-08-29 | `2.0.0-beta.2` | npm |
+
+Dates for a README entry show when a device was documented, which can be later than when it first worked.

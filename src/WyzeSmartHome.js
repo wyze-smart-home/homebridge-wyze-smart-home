@@ -2,16 +2,17 @@ const fs = require('fs')
 const path = require('path')
 const { homebridge, Accessory, UUIDGen, Categories } = require('./types')
 const enums = require('./enums')
+const wyzeApiVersion = require('./wyzeApiVersion')
+const plannedDevices = require('./plannedDevices')
+const PropertyPoller = require('./propertyPoller')
 const { OutdoorPlugModels, PlugModels, CommonModels, CameraModels, LeakSensorModels,
   TemperatureHumidityModels, LockModels, LockBoltV2Models, MotionSensorModels, ContactSensorModels, LightModels,
   LightStripModels, MeshLightModels, ThermostatModels, ThermostatRoomSensor, S1GatewayModels,
   VacuumModels, IrrigationModels } = enums
 
-// Single canonical require path. In dev, `npm link wyze-api` (run once
-// after cloning) symlinks node_modules/wyze-api → src/wyze-api so the
-// same string resolves to the local submodule. In published builds it
-// resolves to whatever wyze-api version is pinned in package.json.
-// See README "Development setup" or `npm run dev-link`.
+// Single canonical require path. In dev, `npm run dev-link` (with a wyze-api
+// clone next to this one) links node_modules/wyze-api to that clone. In
+// published builds it resolves to the wyze-api version pinned in package.json.
 const WyzeAPI = require('wyze-api')
 const { resolveSecrets, getValidatedBaseUrls, sanitizeDeviceName } = require('wyze-api/src/util/security')
 const { WyzeLogger } = require('wyze-api/src/util/wyzeLogger')
@@ -32,6 +33,9 @@ const WyzeThermostat = require('./accessories/WyzeThermostat')
 const WyzeRoomSensor = require('./accessories/WyzeRoomSensor')
 const WyzeVacuum = require('./accessories/WyzeVacuum')
 const WyzeIrrigation = require('./accessories/WyzeIrrigation')
+const { createWebSettings } = require('./webSettings')
+const { createWebSensors } = require('./webSensors')
+const webPageLink = require('./webPageLink')
 
 const PLUGIN_NAME = 'homebridge-wyze-smart-home'
 const PLATFORM_NAME = 'WyzeSmartHome'
@@ -46,6 +50,8 @@ const DEFAULT_SECURITY_REFRESH_INTERVAL = 10000
 // window as long as (or longer than) the poll loop itself and silently disable
 // fast polling whenever refreshInterval <= securityRefreshInterval.
 const FULL_REFRESH_SKIP_WINDOW_MS = 10000
+// Empty device lists in a row before the accessories are treated as gone (see refreshDevices).
+const EMPTY_LIST_REFRESHES = 3
 
 // Accessories that make their own API call in updateCharacteristics and return
 // a boolean indicating whether state changed — safe to fast-poll independently.
@@ -54,6 +60,9 @@ const FAST_POLL_CLASSES = new Set([WyzeLock, WyzeLockBoltV2])
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
+
+// The process-wide handlers below are installed once, however many Wyze platform entries there are.
+let processHandlersInstalled = false
 
 module.exports = class WyzeSmartHome {
   constructor(log, config, api) {
@@ -104,9 +113,20 @@ module.exports = class WyzeSmartHome {
 
     // Merge in credentials from secretsFile (if configured) and WYZE_* env vars,
     // and validate / lock down the auth/api base URLs to known Wyze hosts.
-    this.config = resolveSecrets(normalized, this.log)
-    Object.assign(this.config, getValidatedBaseUrls(this.config, this.log))
     this.api = api
+    this.config = normalized
+    try {
+      this.config = resolveSecrets(normalized, this.log)
+      Object.assign(this.config, getValidatedBaseUrls(this.config, this.log))
+    } catch (e) {
+      // A missing or unsafe secrets file, or a base URL on a host that is not Wyze's, used to throw out of the constructor and
+      // take the bridge with it. It is a fatal startup problem like the others below: say so once and stay inert, with the
+      // cached accessories left alone.
+      this.log.error(`[FATAL] ${e.message}`)
+      this.disabled = true
+      this.accessories = []
+      return
+    }
 
     // Apply user-supplied product-code overrides BEFORE constructing the
     // client or scanning devices, so getAccessoryClass sees the extended
@@ -121,6 +141,28 @@ module.exports = class WyzeSmartHome {
       )
     }
 
+    // Fatal startup problems: log once and leave the platform inert. Cached
+    // accessories are left alone (see configureAccessory) so a config or
+    // version problem never removes paired accessories from HomeKit.
+    const apiCheck = wyzeApiVersion.checkInstalled()
+    // The library can differ between two installs of the same plugin version
+    // (it is a range), so say which one is loaded: it is the first thing to ask for.
+    if (apiCheck.installed) {
+      this.log.info?.(`[Wyze] homebridge-wyze-smart-home ${require('../package.json').version}, wyze-api ${apiCheck.installed} (needs ${apiCheck.required})`)
+    }
+    const username = typeof this.config.username === 'string' ? this.config.username.trim() : ''
+    const fatal = !apiCheck.ok
+      ? apiCheck.message
+      : !username
+          ? 'Cannot log in to Wyze: no username specified. Add your Wyze account email to the plugin config ("username") and restart Homebridge.'
+          : null
+    if (fatal) {
+      this.log.error(`[FATAL] ${fatal}`)
+      this.disabled = true
+      this.accessories = []
+      return
+    }
+
     this.client = this.getClient()
 
     this.accessories = []
@@ -128,14 +170,110 @@ module.exports = class WyzeSmartHome {
     this._knownUnsupported = new Set()
     this._lastFullRefreshAt = 0
 
-    process.on('unhandledRejection', (reason) => {
-      this.log.error(`Unhandled promise rejection: ${reason?.stack ?? reason}`)
-    })
-    process.on('uncaughtException', (err) => {
-      this.log.error(`Uncaught exception: ${err.stack ?? err}`)
-    })
+    if (!processHandlersInstalled) {
+      processHandlersInstalled = true
+      process.on('unhandledRejection', (reason) => {
+        this.log.error(`Unhandled promise rejection: ${reason?.stack ?? reason}`)
+      })
+      process.on('uncaughtException', (err) => {
+        this.log.error(`Uncaught exception: ${err.stack ?? err}`)
+      })
+    }
 
     this.api.on('didFinishLaunching', this.didFinishLaunching.bind(this))
+    this.api.on('shutdown', () => this.shutdown())
+  }
+
+  // Close live camera sessions cleanly: a camera that is left with a dead viewer
+  // (a restart used to abandon them) can refuse the next one for a while.
+  shutdown() {
+    this._stopped = true // the refresh loops and anything still waiting on Wyze stop acting
+    for (const accessory of this.accessories ?? []) {
+      try { accessory.stopStreams?.() } catch (_) { /* best effort */ }
+    }
+    this.webServer?.stop().catch(() => {})
+    if (this.webServer) webPageLink.clear(this.api?.user?.storagePath?.() || '')
+    return this.client?.closeAllCameraSessions?.().catch(() => {})
+  }
+
+  // The settings the camera test page shows (read-only), read from Homebridge's config.json.
+  webSettings () {
+    return createWebSettings({
+      configPath: () => this.api?.user?.configPath?.(),
+      platformAlias: PLATFORM_NAME,
+      instanceName: this.config.name,
+      running: () => this.config
+    })
+  }
+
+  // The sensors list of the camera test page (read-only): what each camera has, and how the config reads for it.
+  webSensors () {
+    return createWebSensors({
+      configPath: () => this.api?.user?.configPath?.(),
+      platformAlias: PLATFORM_NAME,
+      instanceName: this.config.name,
+      storagePath: () => this.api?.user?.storagePath?.()
+    })
+  }
+
+  // The devices the camera test page offers to test and report because the plugin has no support for them, and what
+  // is already known about their model.
+  otherDevicesForTestPage () {
+    let apiVersion
+    try { apiVersion = require('wyze-api/package.json').version } catch (_) { /* unknown */ }
+    return {
+      unsupported: (device) => !this.getAccessoryClass(device.product_type, device.product_model),
+      describeDevice: (model) => {
+        const known = plannedDevices.lookup(model)
+        return known ? `This looks like a ${known.name}. ${known.note}` : undefined
+      },
+      versions: { plugin: require('../package.json').version, ...(apiVersion ? { 'wyze-api': apiVersion } : {}), node: process.version }
+    }
+  }
+
+  // What the camera test page needs to open this plugin's device report form with some fields filled in.
+  issueFormForTestPage () {
+    let labels = {}
+    try { labels = require('./deviceIssueLabels.json') } catch (_) { /* the page then fills in the model code instead */ }
+    let apiVersion
+    try { apiVersion = require('wyze-api/package.json').version } catch (_) { /* unknown */ }
+    return {
+      url: 'https://github.com/identd113/homebridge-wyze-smart-home/issues/new',
+      template: 'new-device.yml',
+      origin: 'camera-test-page',
+      kind: 'Camera or doorbell',
+      plugin: `${require('../package.json').version}${apiVersion ? ` (wyze-api ${apiVersion})` : ''}`,
+      deviceLabel: (model) => labels[model]
+    }
+  }
+
+  // The camera test page: a web page in this process for testing each camera over the home network.
+  // Off unless advanced.webServerPort is a port from 1024 up. A bad value or a busy port is logged and the
+  // plugin carries on without the page. `lib` is wyze-api; tests pass a stand-in.
+  async startCameraTestPage (lib = WyzeAPI) {
+    webPageLink.clear(this.api?.user?.storagePath?.() || '') // a link left by an earlier run is no longer good
+    const raw = this.config.webServerPort ?? this.config.advanced?.webServerPort
+    if (raw === undefined || raw === null || raw === '' || raw === 0 || raw === '0') return
+    try {
+      if (typeof lib.validateWebPort !== 'function' || typeof lib.createCameraTestServer !== 'function') {
+        this.log.warn?.('[Web] advanced.webServerPort is set, but the installed wyze-api is too old for the camera test page. Update wyze-api and restart.')
+        return
+      }
+      const check = lib.validateWebPort(raw)
+      if (check.error) {
+        this.log.warn?.(`[Web] ${check.error}. The camera test page is off.`)
+        return
+      }
+      if (!check.enabled) return
+      this.webServer = lib.createCameraTestServer({ client: this.client, port: check.port, log: this.log, issueForm: this.issueFormForTestPage(), settings: this.webSettings(), sensors: this.webSensors(), ...this.otherDevicesForTestPage() })
+      const { urls } = await this.webServer.start()
+      this.log.info?.(`[Web] Camera test page is on port ${check.port}. Open one of these from a computer on the same network (the token changes at every restart, and anyone with the link can test your cameras and change night vision):`)
+      for (const url of urls) this.log.info?.(`[Web]   ${url}`)
+      webPageLink.write(this.api?.user?.storagePath?.() || '', { port: check.port, urls })
+    } catch (e) {
+      this.webServer = undefined
+      this.log.warn?.(`[Web] The camera test page could not start: ${e.code === 'EADDRINUSE' ? `port ${raw} is already in use` : e.message}`)
+    }
   }
 
   static register() {
@@ -148,8 +286,10 @@ module.exports = class WyzeSmartHome {
       username: this.config.username,
       password: this.config.password,
       mfaCode: this.config.mfaCode,
-      keyId: this.config.keyId,
-      apiKey: this.config.apiKey,
+      totpSecret: this.config.totpSecret,
+      // Stray whitespace from copy/paste is never part of a developer key
+      keyId: typeof this.config.keyId === 'string' ? this.config.keyId.trim() : this.config.keyId,
+      apiKey: typeof this.config.apiKey === 'string' ? this.config.apiKey.trim() : this.config.apiKey,
       //Logging — the API uses its own @ptkdev/logger for colored
       // terminal output. logLevel filters that output; apiLogEnabled is
       // the legacy true/false toggle (true → debug, false → info).
@@ -187,12 +327,12 @@ module.exports = class WyzeSmartHome {
     }
     this.runLoop()
     this.runLockFastPollLoop()
+    this.startCameraTestPage()
   }
 
   async runLoop() {
     const interval = this.config.refreshInterval || DEFAULT_REFRESH_INTERVAL
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
+    while (!this._stopped) {
       try {
         await this.refreshDevices()
       } catch (e) {
@@ -206,8 +346,7 @@ module.exports = class WyzeSmartHome {
   async runLockFastPollLoop() {
     const interval = this.config.securityRefreshInterval || DEFAULT_SECURITY_REFRESH_INTERVAL
     await delay(interval)
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
+    while (!this._stopped) {
       try {
         await this.refreshLockDevices()
       } catch (e) { }
@@ -216,6 +355,7 @@ module.exports = class WyzeSmartHome {
   }
 
   async refreshLockDevices() {
+    if (this._stopped) return
     if (Date.now() - this._lastFullRefreshAt < FULL_REFRESH_SKIP_WINDOW_MS) return
 
     const targets = this.accessories.filter(a => FAST_POLL_CLASSES.has(a.constructor) && a.lastDevice)
@@ -243,7 +383,17 @@ module.exports = class WyzeSmartHome {
     }
   }
 
-  async refreshDevices() {
+  // One refresh at a time. The lock fast poll can call this while the main loop's refresh is still running (Wyze slow), and two
+  // at once would double the requests and let one refresh's bulk property rows be taken by the other.
+  refreshDevices() {
+    if (this._stopped) return Promise.resolve()
+    if (!this._refreshing) {
+      this._refreshing = this._refreshDevicesOnce().finally(() => { this._refreshing = null })
+    }
+    return this._refreshing
+  }
+
+  async _refreshDevicesOnce() {
     let fastPollSummary = ''
     if (this._fastPollStats.size > 0) {
       const parts = []
@@ -264,6 +414,19 @@ module.exports = class WyzeSmartHome {
         return
       }
 
+      // An empty list while accessories exist is most likely a Wyze outage. Acting on it would
+      // unregister every bridged accessory (and with it the user's HomeKit rooms and automations),
+      // so it is ignored until it has been empty for several refreshes in a row.
+      if (devices.length === 0 && this.accessories.length > 0) {
+        this._emptyListCount = (this._emptyListCount || 0) + 1
+        if (this._emptyListCount < EMPTY_LIST_REFRESHES) {
+          this.log.warn(`Wyze returned no devices (${this._emptyListCount}/${EMPTY_LIST_REFRESHES}); keeping the ${this.accessories.length} known accessories`)
+          return
+        }
+      } else {
+        this._emptyListCount = 0
+      }
+
       if (this.config.pluginLoggingEnabled) this.log(`Found ${devices.length} device(s)`)
 
       // Wyze Room Sensors (CO_TH1) aren't returned by the bulk getObjectList
@@ -275,7 +438,20 @@ module.exports = class WyzeSmartHome {
       if (this.config.enableThermostatRoomSensors) {
         const roomSensors = await this.discoverRoomSensors(devices)
         for (const rs of roomSensors) devices.push(rs)
+        // A thermostat whose lookup failed this time has no sensors in the list, which would read as "removed" and unregister
+        // them (and their HomeKit rooms and automations). Keep them, as they were last seen, until a lookup succeeds.
+        for (const accessory of this.accessories) {
+          const parent = accessory.lastDevice?.parent_device_mac
+          if (accessory instanceof WyzeRoomSensor && parent && this._roomSensorLookupFailed?.has(parent) && !devices.some((d) => d.mac === accessory.mac)) {
+            devices.push(accessory.lastDevice)
+          }
+        }
       }
+
+      // One request for the properties every camera that needs them will read below, instead
+      // of one request per camera. Cameras fall back to their own read if this has nothing for them.
+      if (!this._propertyPoller) this._propertyPoller = new PropertyPoller(this.client, { log: this.log })
+      await this._propertyPoller.prefetch(this.accessories)
 
       await this.loadDevices(devices, timestamp)
       this._lastFullRefreshAt = Date.now()
@@ -305,6 +481,7 @@ module.exports = class WyzeSmartHome {
     if (thermostats.length === 0) return []
 
     if (!this._roomSensorRawLogged) this._roomSensorRawLogged = new Set()
+    this._roomSensorLookupFailed = new Set() // thermostats whose lookup failed in this pass
     const out = []
 
     for (const t of thermostats) {
@@ -318,6 +495,7 @@ module.exports = class WyzeSmartHome {
         if (err?.response?.data) {
           this.log.error(`[RoomSensor]   Earth response body: ${JSON.stringify(err.response.data)}`)
         }
+        this._roomSensorLookupFailed.add(t.mac)
         continue
       }
 
@@ -428,6 +606,11 @@ module.exports = class WyzeSmartHome {
 
     const removedAccessories = this.accessories.filter(a => !foundAccessories.includes(a))
     if (removedAccessories.length > 0) {
+      // A camera that is filtered out or leaves the account must stop its live
+      // streams and its doorbell poll, or both keep running unseen.
+      for (const a of removedAccessories) {
+        try { a.stopStreams?.() } catch (_) { /* best effort */ }
+      }
       // External (camera) accessories aren't registered with the bridge, so
       // they can't be unregistered here. They have to be removed manually
       // from the Home app — same behavior as homebridge-camera-ffmpeg /
@@ -443,20 +626,21 @@ module.exports = class WyzeSmartHome {
   }
 
   async loadDevice(device, timestamp) {
+    const safeName = sanitizeDeviceName(device.nickname)
     const accessoryClass = this.getAccessoryClass(device.product_type, device.product_model, device.mac, device.nickname)
     if (!accessoryClass) {
       if (this.config.pluginLoggingEnabled && !this._knownUnsupported.has(device.mac)) {
         this._knownUnsupported.add(device.mac)
-        this.log(`[${device.product_type}] Unsupported device type: (Name: ${device.nickname}) (MAC: ${device.mac}) (Model: ${device.product_model})`)
+        this.log(`[${device.product_type}] Unsupported device type: (Name: ${safeName}) (MAC: ${device.mac}) (Model: ${device.product_model})${plannedDevices.describe(device.product_model)}`)
       }
       return
     }
     else if (this.config.filterByMacAddressList?.find(d => d === device.mac) || this.config.filterDeviceTypeList?.find(d => d === device.product_type)) {
-      if (this.config.pluginLoggingEnabled) this.log(`[${device.product_type}] Ignoring (${device.nickname}) (MAC: ${device.mac}) because it is in the Ignore Device list`)
+      if (this.config.pluginLoggingEnabled) this.log(`[${device.product_type}] Ignoring (${safeName}) (MAC: ${device.mac}) because it is in the Ignore Device list`)
       return
     }
-    else if (device.product_type == 'S1Gateway' && !this.config.hmsEnabled) {
-      if (this.config.pluginLoggingEnabled) this.log(`[${device.product_type}] Ignoring (${device.nickname}) (MAC: ${device.mac}) because it is not enabled`)
+    else if (device.product_type == 'S1Gateway' && !(this.config.hmsEnabled ?? this.config.hms?.enabled)) {
+      if (this.config.pluginLoggingEnabled) this.log(`[${device.product_type}] Ignoring (${safeName}) (MAC: ${device.mac}) because it is not enabled`)
       return
     }
 
@@ -466,7 +650,9 @@ module.exports = class WyzeSmartHome {
       const isCamera = accessoryClass === WyzeCamera
       const homeKitAccessory = this.createHomeKitAccessory(
         device,
-        isCamera ? Categories?.CAMERA : undefined,
+        isCamera
+          ? (this.client.cameraIsDoorbell?.(device.product_model) ? Categories?.VIDEO_DOORBELL : Categories?.CAMERA)
+          : undefined,
         isCamera
       )
       accessory = new accessoryClass(this, homeKitAccessory)
@@ -480,7 +666,7 @@ module.exports = class WyzeSmartHome {
       this.accessories.push(accessory)
     }
     accessory.update(device, timestamp).catch((err) => {
-      this.log.error(`[${device.product_type}] Unhandled error updating ${device.nickname}: ${err.message}\n${err.stack}`)
+      this.log.error(`[${device.product_type}] Unhandled error updating ${safeName}: ${err.message}\n${err.stack}`)
     })
 
     return accessory
@@ -571,6 +757,10 @@ module.exports = class WyzeSmartHome {
 
   // Homebridge calls this method on boot to reinitialize previously-discovered devices
   configureAccessory(homeKitAccessory) {
+    // Platform disabled by a fatal startup error: leave cached accessories
+    // untouched (neither set up nor unregistered) so nothing is lost.
+    if (this.disabled) return
+
     // Make sure we haven't set up this accessory already
     let accessory = this.accessories.find(a => a.homeKitAccessory === homeKitAccessory)
     if (accessory) {

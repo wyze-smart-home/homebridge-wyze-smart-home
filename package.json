@@ -1,6 +1,6 @@
 {
   "name": "homebridge-wyze-smart-home",
-  "version": "2.0.0-beta.2",
+  "version": "2.0.0-beta.4",
   "description": "Wyze Smart Home plugin for Homebridge",
   "license": "MIT",
   "main": "src/index.js",
@@ -8,36 +8,47 @@
     "pluginAlias": "WyzeSmartHome",
     "platform": "WyzeSmartHome"
   },
+  "files": [
+    "src",
+    "homebridge-ui",
+    "config.schema.json",
+    "configSample.json",
+    "logo.png",
+    "license.txt",
+    "CONTRIBUTORS.md",
+    "CHANGELOG.md",
+    "README.md"
+  ],
   "scripts": {
-    "lint": "eslint src/**.js --max-warnings=0",
+    "test": "node --test tests/*.test.js",
+    "lint": "eslint src --max-warnings=0",
     "start": "hb-service run -P ../ -U ./ --stdout",
-    "dev-link": "cd src/wyze-api && npm link && cd ../.. && npm link wyze-api"
+    "dev-link": "npm link ../wyze-api",
+    "known-models": "node .github/scripts/gen-known-models.js",
+    "device-options": "node .github/scripts/gen-device-options.js"
   },
   "keywords": [
     "homebridge-plugin",
     "Wyze",
     "Hoobs"
   ],
-  "homepage": "http://github.com/jfarmer08/homebridge-wyze-smart-home",
+  "homepage": "https://github.com/identd113/homebridge-wyze-smart-home",
   "repository": {
     "type": "git",
-    "url": "git://github.com/jfarmer08/homebridge-wyze-smart-home.git"
+    "url": "git+https://github.com/identd113/homebridge-wyze-smart-home.git"
   },
   "bugs": {
-    "url": "http://github.com/jfarmer08/homebridge-wyze-smart-home/issues"
+    "url": "https://github.com/identd113/homebridge-wyze-smart-home/issues"
   },
   "engines": {
-    "homebridge": "^1.6.0 || ^2.0.0",
-    "node": "^18.20.4 || ^20.15.1 || ^22.0.0 || ^24"
+    "homebridge": "^1.8.5 || ^2.0.0",
+    "node": "^22.0.0 || ^24 || ^26"
   },
   "dependencies": {
+    "@homebridge/plugin-ui-utils": "^2.2.6",
     "axios": "^1.15.0",
-    "ffmpeg-static": "^5.3.0",
-    "querystring": "0.2.1",
-    "utf8": "^3.0.0",
-    "uuid-by-string": "4.0.0",
-    "werift": "^0.23.0",
-    "wyze-api": "2.0.0-beta.2"
+    "semver": "^7.6.0",
+    "wyze-api": "^2.0.0-beta.4"
   },
   "devDependencies": {
     "@fastify/multipart": "^10.0.0",
@@ -47,19 +58,5 @@
     "eslint-config-standard": "^17.1.0",
     "homebridge": "^2.0.0",
     "homebridge-config-ui-x": "^5.22.0"
-  },
-  "funding": [
-    {
-      "type": "paypal",
-      "url": "https://paypal.me/AllenFarmer"
-    },
-    {
-      "type": "venmo",
-      "url": "https://venmo.com/u/Allen-Farmer"
-    },
-    {
-      "type": "cashApp",
-      "url": "https://cash.app/$Jfamer08"
-    }
-  ]
+  }
 }

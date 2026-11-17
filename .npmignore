@@ -1,10 +1,11 @@
-# Dev-only submodule — release uses the wyze-api npm package instead
-src/wyze-api/
 
 # CI/CD and editor config
 .github/
 .claude/
+CLAUDE.md
+AGENTS.md
 .vscode/
+.eslintrc.json
 .gitmodules
 .gitattributes
 
@@ -12,3 +13,8 @@ src/wyze-api/
 .DS_Store
 yarn.lock
 package-lock.json
+
+# Local working notes and tests are not part of the package
+testing/
+tests/
+docs/

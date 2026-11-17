@@ -1,0 +1,242 @@
+<!-- The plugin's settings page: the usual form, plus a panel of the sensors the plugin found each camera can have, with a
+     button that saves the choice into the config, and a button that opens the camera test page when it is on.
+     Nothing here writes the config itself: a choice goes to the page's server (server.js) to be checked, and Homebridge's
+     own UI saves it (updatePluginConfig, then savePluginConfig). All of the logic is in src/detectedView.js. -->
+<style>
+  /* Colours come from the page (currentColor and transparency), so it reads on both the light and dark themes. */
+  #wyze-detected { margin-top: 1.5rem; }
+  #wyze-detected .wd-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: .25rem; }
+  #wyze-detected h5 { margin: 0; }
+  #wyze-detected .wd-note { opacity: .75; font-size: .85rem; margin: 0 0 .75rem; }
+  #wyze-detected .wd-card { border: 1px solid rgba(128, 128, 128, .4); border-radius: 6px; padding: .6rem .8rem; margin-bottom: .5rem; }
+  #wyze-detected .wd-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .6rem; }
+  #wyze-detected .wd-name { font-weight: 600; }
+  #wyze-detected .wd-sub { opacity: .75; font-size: .8rem; }
+  #wyze-detected .wd-setting { flex-basis: 100%; }
+  #wyze-detected .wd-items { display: flex; flex-wrap: wrap; gap: .9rem .6rem; margin: .8rem 0 .4rem; }
+  #wyze-detected .wd-pill { position: relative; display: inline-flex; align-items: center; gap: .4rem; padding: .25rem .9rem; font: inherit; font-size: .9rem; color: inherit; background: transparent; border: 1px solid rgba(128, 128, 128, .6); border-radius: 999px; opacity: .65; cursor: pointer; }
+  #wyze-detected .wd-pill[aria-pressed="true"] { opacity: 1; color: #fff; background: #5c3fb5; border-color: #5c3fb5; }
+  #wyze-detected .wd-pill:focus-visible { outline: 2px solid #8f7ae0; outline-offset: 2px; }
+  #wyze-detected .wd-ai { position: absolute; top: -.55rem; right: .6rem; padding: 0 .35rem; font-size: .6rem; font-weight: 700; line-height: 1.1rem; letter-spacing: .03em; color: #fff; background: #1f7fbf; border-radius: 999px; }
+  #wyze-detected .wd-pill:disabled { cursor: not-allowed; opacity: .45; }
+  #wyze-detected .wd-warn { margin: .35rem 0 0; padding-left: .6rem; border-left: 3px solid #e0a030; font-size: .85rem; }
+  #wyze-detected .wd-plan { margin: 0 0 .5rem; font-size: .9rem; }
+  #wyze-detected .wd-noplan { opacity: 1; font-weight: 600; }
+  #wyze-detected .wd-tag { font-size: .7rem; opacity: .8; white-space: nowrap; }
+  #wyze-detected .wd-empty { opacity: .75; font-size: .85rem; margin: .25rem 0 0; }
+  #wyze-detected .wd-link { margin: 0 0 .75rem; padding: .6rem .8rem; border: 1px solid rgba(128, 128, 128, .4); border-radius: 6px; font-size: .9rem; }
+  #wyze-detected .wd-switches { display: flex; flex-wrap: wrap; gap: .3rem 1.2rem; margin: .4rem 0 .6rem; }
+  #wyze-detected .wd-switch { display: inline-flex; align-items: center; gap: .3rem; margin: 0; font-size: .9rem; }
+  #wyze-detected .wd-address { display: block; width: 100%; margin-top: .5rem; font-family: monospace; }
+  #wyze-detected .wd-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+</style>
+<div id="wyze-detected"></div>
+
+<script>
+  (async () => {
+    const root = document.getElementById('wyze-detected');
+
+    function el (tag, text, className) {
+      const node = document.createElement(tag);
+      if (text !== undefined) node.textContent = text;
+      if (className) node.className = className;
+      return node;
+    }
+
+    // The config the page was last built from. Saving refuses to go on when the config has changed since, so edits
+    // made in the settings form above (not saved yet) are not written along with this camera's change.
+    let baseConfig;
+
+    async function save (cam, choice) {
+      try {
+        const config = await homebridge.getPluginConfig();
+        if (!config.length) {
+          homebridge.toast.error('Save the plugin settings once first, then try again.');
+          return;
+        }
+        if (!baseConfig || JSON.stringify(baseConfig) !== JSON.stringify(config)) {
+          homebridge.toast.error('Not saved: the settings form has changes that are not saved yet. Save them with the form\'s own Save button, press Refresh here, then try again.');
+          return;
+        }
+        // The server checks the change; nothing is saved unless it passes, and a check that cannot finish counts as a failure.
+        const prepared = await homebridge.request('/prepare', { config, id: cam.id, choice });
+        if (!prepared || !prepared.ok) {
+          homebridge.toast.error('Not saved: ' + ((prepared && prepared.errors) || ['the change could not be checked']).join('; '));
+          return;
+        }
+        homebridge.updatePluginConfig(prepared.next);
+        await homebridge.savePluginConfig();
+        homebridge.toast.success('Saved for ' + cam.name + '. Restart Homebridge to apply it.');
+        await render();
+      } catch (e) {
+        homebridge.toast.error('Not saved: ' + (e && e.message ? e.message : e));
+      }
+    }
+
+    function card (cam) {
+      const ticks = new Map();
+      const box = el('div', undefined, 'wd-card');
+      const head = el('div', undefined, 'wd-head');
+      head.appendChild(el('span', cam.name, 'wd-name'));
+      if (cam.model) head.appendChild(el('span', cam.model, 'wd-sub'));
+      if (cam.plan) head.appendChild(el('span', cam.plan, 'wd-sub wd-setting' + (cam.planActive ? '' : ' wd-noplan')));
+      head.appendChild(el('span', cam.setting, 'wd-sub wd-setting'));
+      box.appendChild(head);
+
+      const saveButton = el('button', 'Save these to the config', 'btn btn-primary btn-sm');
+      saveButton.disabled = true;
+      const switchesNow = new Map(); // a switch changed from what the config has: key -> true or false
+      function group (items, heading) {
+        if (items.length === 0) return;
+        if (heading) box.appendChild(el('div', heading, 'wd-group'));
+        const list = el('div', undefined, 'wd-items');
+        for (const item of items) {
+          const row = el('button', undefined, 'wd-pill');
+          row.type = 'button';
+          const on = () => (ticks.has(item.key) ? ticks.get(item.key) : item.checked);
+          const show = () => { row.setAttribute('aria-pressed', on() ? 'true' : 'false'); row.title = item.label + (on() ? ': on' : ': off') + ' (click to change)'; };
+          if (item.blocked) row.disabled = true;
+          row.addEventListener('click', () => {
+            if (item.blocked) return;
+            const next = !on();
+            if (next === item.checked) ticks.delete(item.key); else ticks.set(item.key, next);
+            show();
+            changed();
+          });
+          show();
+          row.appendChild(el('span', item.label));
+          // A small AI mark on top of the pill for labels that come from Wyze's AI detection.
+          if (item.ai) row.appendChild(el('span', 'AI', 'wd-ai'));
+          if (item.tag) row.appendChild(el('span', item.tag, 'wd-tag'));
+          list.appendChild(row);
+        }
+        box.appendChild(list);
+        for (const item of items.filter((x) => x.blocked)) box.appendChild(el('p', '\u26a0 ' + item.label + ': ' + item.warning, 'wd-warn'));
+      }
+      if (!cam.items.some((item) => item.ai)) box.appendChild(el('p', 'No AI labels found on this camera\u2019s events.', 'wd-empty'));
+      box.appendChild(el('div', 'Sensors in HomeKit (they report what the camera sees)', 'wd-group'));
+      group(cam.items.filter((item) => !item.other));
+      group(cam.items.filter((item) => item.other), 'Other labels. No sensor type for these yet, so turning one on only saves the name.');
+      if (cam.unnamed.length) box.appendChild(el('p', 'Labels with no name here: ' + cam.unnamed.join(', ') + '. They get no sensor.', 'wd-empty'));
+
+      // The camera's extra HomeKit switches: each is a checkbox on its card, saved with the Save button below.
+      // A change on this card is saved with this card's own button, not with the form's Save button, so say so while
+      // there is something unsaved: ticking a box and then pressing the form's Save saves nothing of it.
+      const unsaved = el('p', 'Not saved yet. Press \u201cSave these to the config\u201d below. The settings form\u2019s own Save button does not include these changes.', 'wd-warn');
+      unsaved.hidden = true;
+      const changed = () => {
+        const dirty = ticks.size > 0 || switchesNow.size > 0;
+        saveButton.disabled = !dirty;
+        unsaved.hidden = !dirty;
+      };
+      box.appendChild(el('div', 'Switches in HomeKit (they control the camera)', 'wd-group'));
+      const switchList = el('div', undefined, 'wd-switches');
+      for (const sw of cam.switches) {
+        const row = el('label', undefined, 'wd-switch');
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = sw.checked;
+        input.addEventListener('change', () => {
+          if (input.checked === sw.checked) switchesNow.delete(sw.key); else switchesNow.set(sw.key, input.checked);
+          changed();
+        });
+        row.appendChild(input);
+        row.appendChild(el('span', ' ' + sw.label));
+        row.title = sw.help;
+        switchList.appendChild(row);
+      }
+      box.appendChild(switchList);
+
+      box.appendChild(unsaved);
+      const buttons = el('div', undefined, 'wd-actions');
+      saveButton.addEventListener('click', () => {
+        const choice = {};
+        if (ticks.size > 0) choice.ticks = Object.fromEntries(ticks);
+        if (switchesNow.size > 0) choice.switches = Object.fromEntries(switchesNow);
+        save(cam, choice);
+      });
+      buttons.appendChild(saveButton);
+      if (cam.notAuto) {
+        const autoButton = el('button', 'Back to automatic', 'btn btn-secondary btn-sm');
+        autoButton.addEventListener('click', () => save(cam, { auto: true }));
+        buttons.appendChild(autoButton);
+      }
+      box.appendChild(buttons);
+      return box;
+    }
+
+    // The camera test page is a separate page served by the plugin when advanced.webServerPort is set.
+    async function testPageLink () {
+      const box = el('div', undefined, 'wd-link');
+      let link;
+      try { link = await homebridge.request('/web-link'); } catch (_) { link = { urls: [] }; }
+      if (link.urls && link.urls.length) {
+        // The page listens on every address of the Homebridge computer. Link to the one this screen was opened by, so
+        // it is an address the browser can reach; otherwise the first one that is not local to the computer itself.
+        const usable = link.urls.filter((u) => !/\/\/(localhost|127\.)/.test(u));
+        const here = window.location.hostname;
+        const best = usable.find((u) => { try { return new URL(u).hostname === here; } catch (_) { return false; } }) || usable[0] || link.urls[0];
+        const open = el('a', 'Open camera test page', 'btn btn-primary btn-sm');
+        open.href = best;
+        open.target = '_blank';
+        open.rel = 'noopener noreferrer';
+        // A click opens the page in a new tab. If the browser refuses (some block new tabs from a frame), the address is
+        // below to copy, so there is always a way in.
+        open.addEventListener('click', (event) => {
+          event.preventDefault();
+          const tab = window.open(best, '_blank');
+          if (tab) { try { tab.opener = null; } catch (_) { /* cross-origin already */ } return; }
+          fallback.hidden = false;
+          fallback.select();
+        });
+        box.appendChild(open);
+        let shown = best;
+        try { const u = new URL(best); shown = u.protocol + '//' + u.host; } catch (_) { /* show it as it is */ }
+        const fallback = document.createElement('input');
+        fallback.type = 'text';
+        fallback.readOnly = true;
+        fallback.value = best;
+        fallback.className = 'form-control form-control-sm wd-address';
+        fallback.setAttribute('aria-label', 'Camera test page address');
+        fallback.addEventListener('focus', () => fallback.select());
+        box.appendChild(el('span', ' ' + shown + ' \u2013 opens in a new tab. It tests cameras and other devices over your home network; the link carries a token that changes when Homebridge restarts.', 'wd-sub'));
+        fallback.hidden = true;
+        box.appendChild(fallback);
+      } else {
+        box.appendChild(el('span', 'The camera test page is off. It tests each camera over your home network and sets night vision. To turn it on, set a port from 1024 up under Advanced, \u201cCamera Test Page Port\u201d, then restart Homebridge.'));
+      }
+      return box;
+    }
+
+    async function render () {
+      root.textContent = '';
+      root.appendChild(await testPageLink());
+      const top = el('div', undefined, 'wd-top');
+      top.appendChild(el('h5', 'Detected sensors'));
+      const refresh = el('button', 'Refresh', 'btn btn-outline-secondary btn-sm');
+      refresh.addEventListener('click', render);
+      top.appendChild(refresh);
+      root.appendChild(top);
+      let data;
+      let config;
+      try {
+        config = await homebridge.getPluginConfig();
+        data = await homebridge.request('/view', { config });
+      } catch (e) {
+        root.appendChild(el('p', 'Could not read what the plugin found: ' + (e && e.message ? e.message : e), 'wd-empty'));
+        return;
+      }
+      baseConfig = JSON.parse(JSON.stringify(config));
+      if (data.cameras.length === 0) {
+        root.appendChild(el('p', 'Nothing yet. Each camera is checked when Homebridge starts; this fills in a minute or so after a start.', 'wd-note'));
+      } else {
+        for (const line of data.plans) root.appendChild(el('p', line.text, 'wd-plan' + (line.soon ? ' wd-warn' : '')));
+        root.appendChild(el('p', 'Click a sensor to turn it on (filled) or off (outlined), save, then restart Homebridge. Motion and Sound are on by themselves where the camera reports them; Person, Vehicle, Pet and Package come from Wyze\u2019s AI detection (a plan that includes it). Face is never automatic.', 'wd-note'));
+        for (const cam of data.cameras) root.appendChild(card(cam));
+      }
+    }
+
+    homebridge.showSchemaForm();
+    await render();
+  })();
+</script>

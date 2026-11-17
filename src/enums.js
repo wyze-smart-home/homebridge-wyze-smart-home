@@ -2,7 +2,7 @@
  * Per-accessory product-model lookups used by getAccessoryClass to route
  * a Wyze device to the right HomeKit accessory class.
  *
- * Source of truth lives in the wyze-api submodule
+ * Source of truth lives in the wyze-api package
  * (`WyzeAccessoryModels`). This module shallow-clones each map so the
  * plugin can extend them at runtime via `applyConfigOverrides()` —
  * useful when Wyze releases a new product code that hasn't been added
@@ -88,7 +88,9 @@ function applyConfigOverrides(overrides, log) {
   }
 
   for (const [category, extras] of Object.entries(overrides)) {
-    const target = _MAP_BY_NAME[category]
+    // Own names only: a category such as "__proto__" or "constructor" would otherwise find the object's own prototype or
+    // constructor, and the codes would be written into it.
+    const target = Object.prototype.hasOwnProperty.call(_MAP_BY_NAME, category) ? _MAP_BY_NAME[category] : undefined
     if (!target) {
       result.unknownCategories.push(category)
       warn(`[enums] Unknown deviceTypeOverrides category "${category}" — ignored. ` +
@@ -176,7 +178,7 @@ const ModelNames = {
   "AN_RSCW":         "Battery Cam Pro",
   "LD_CFP":          "Cam Floodlight Pro",
   "GW_GC1":          "Cam OG",
-  "GW_GC":           "Cam OG Telephoto 3x",
+  "GW_GC2":          "Cam OG Telephoto 3x",
   // Vacuum / Irrigation
   "JA_RO2":          "Robot Vacuum",
   "BS_WK1":          "Sprinkler Controller",

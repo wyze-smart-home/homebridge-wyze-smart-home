@@ -38,6 +38,15 @@ module.exports = class WyzeLight extends WyzeAccessory {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  // For PropertyPoller: the properties updateCharacteristics switches on, and whether it will read them this cycle.
+  get propertyPids() {
+    return [PIDs.BRIGHTNESS, PIDs.COLOR_TEMP];
+  }
+
+  wantsProperties() {
+    return !!this.lastDevice?.device_params && this.lastDevice.conn_state !== 0;
+  }
+
   async updateCharacteristics(device) {
     const online = device.conn_state !== 0;
     markServiceOnline(this.getService(), online);
@@ -61,13 +70,13 @@ module.exports = class WyzeLight extends WyzeAccessory {
       this.getCharacteristic(Characteristic.On).updateValue(isOn);
     }
 
-    // NOTE: this is one extra API call per light per refresh cycle (on top
-    // of the bulk getObjectList). With many bulbs configured, this adds up
-    // against the Wyze rate limit. Brightness + color-temp aren't returned
-    // by getObjectList, so we have to fetch them separately.
+    // NOTE: brightness + color-temp aren't returned by getObjectList, so we
+    // fetch them separately. The platform reads them for all lights in one
+    // request when it can; otherwise this is one extra API call per light per
+    // refresh cycle, which adds up against the Wyze rate limit with many bulbs.
     let propertyList;
     try {
-      propertyList = await this.plugin.client.getDevicePID(this.mac, this.product_model);
+      propertyList = await this._readPropertyList();
     } catch (err) {
       this.plugin.log.error(
         `[Light] getDevicePID failed for ${this.display_name}: ${err.message || err}`
@@ -81,6 +90,7 @@ module.exports = class WyzeLight extends WyzeAccessory {
     let brightness = null;
     let colorTempK = null;
     for (const property of propertyList?.data?.property_list ?? []) {
+      if (!this.isValidProperty(property)) continue;
       switch (property.pid) {
         case PIDs.BRIGHTNESS:
           brightness = Number(property.value);
@@ -105,6 +115,16 @@ module.exports = class WyzeLight extends WyzeAccessory {
       );
   }
 
+  isValidProperty(property) {
+    // Wyze reports placeholder values ("undefi" is a truncated "undefined") when a bulb has not
+    // synced yet. Skip them, as WyzeMeshLight does, so they do not overwrite the real state.
+    const v = property.value;
+    if (v != null && v !== "0" && v !== "undefi" && Number.isFinite(Number(v))) return true;
+    if (this.plugin.config.pluginLoggingEnabled)
+      this.plugin.log(`[Light] Skipping invalid property: ${JSON.stringify(property)}`);
+    return false;
+  }
+
   async setOn(value) {
     if (this.plugin.config.pluginLoggingEnabled)
       this.plugin.log(
@@ -114,8 +134,8 @@ module.exports = class WyzeLight extends WyzeAccessory {
     this.armCommandGrace(15000);
     this.plugin.client.lightPower(this.mac, this.product_model, value ? "1" : "0").catch((e) => {
       this.clearCommandGrace();
-      if (this.plugin.config.pluginLoggingEnabled)
-        this.plugin.log(`[Light] Command error for "${this.display_name}": ${e}`);
+      // Always an error: HomeKit already shows the change, so this is the only sign that it did not happen.
+      this.plugin.log.error(`[Light] Command failed for "${this.display_name}": ${e?.message || e}`);
     });
   }
 
@@ -126,8 +146,8 @@ module.exports = class WyzeLight extends WyzeAccessory {
         `[Light] Setting brightness for ${this.mac} (${this.display_name}) to ${value}`
       );
     this.plugin.client.setBrightness(this.mac, this.product_model, value).catch((e) => {
-      if (this.plugin.config.pluginLoggingEnabled)
-        this.plugin.log(`[Light] Command error for "${this.display_name}": ${e}`);
+      // Always an error: HomeKit already shows the change, so this is the only sign that it did not happen.
+      this.plugin.log.error(`[Light] Command failed for "${this.display_name}": ${e?.message || e}`);
     });
   }
 
@@ -143,8 +163,8 @@ module.exports = class WyzeLight extends WyzeAccessory {
         `[Light] Setting color temp for ${this.mac} (${this.display_name}) to ${value} mireds (${wyzeValue}K)`
       );
     this.plugin.client.setColorTemperature(this.mac, this.product_model, wyzeValue).catch((e) => {
-      if (this.plugin.config.pluginLoggingEnabled)
-        this.plugin.log(`[Light] Command error for "${this.display_name}": ${e}`);
+      // Always an error: HomeKit already shows the change, so this is the only sign that it did not happen.
+      this.plugin.log.error(`[Light] Command failed for "${this.display_name}": ${e?.message || e}`);
     });
   }
 };

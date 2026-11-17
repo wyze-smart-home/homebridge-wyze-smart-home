@@ -19,3 +19,12 @@ config.json.old
 
 # Claude Code worktree state
 /.claude
+# agent instruction files stay local
+CLAUDE.md
+AGENTS.md
+
+# credentials, saved logins, logs and build output never belong in the repository
+.env
+wyze-*.json
+*.log
+*.tgz

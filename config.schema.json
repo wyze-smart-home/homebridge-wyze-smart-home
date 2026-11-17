@@ -2,46 +2,57 @@
   "pluginAlias": "WyzeSmartHome",
   "pluginType": "platform",
   "singular": true,
-  "headerDisplay": "Wyze plug-in for Homebridge — control Wyze devices via the unofficial API. Wyze can change or revoke access at any time. If this plugin is useful to you, [donations](https://www.paypal.com/paypalme/AllenFarmer) help fund hardware for adding new device support.",
-  "footerDisplay": "[Documentation & troubleshooting on GitHub](https://github.com/jfarmer08/homebridge-wyze-smart-home).",
+  "customUi": true,
+  "headerDisplay": "Wyze plug-in for Homebridge — control Wyze devices via the unofficial API. Wyze can change or revoke access at any time.",
+  "footerDisplay": "[Documentation & troubleshooting on GitHub](https://github.com/identd113/homebridge-wyze-smart-home).",
   "schema": {
     "type": "object",
+    "required": ["name"],
     "properties": {
       "name": {
         "title": "Plugin Name",
         "type": "string",
-        "default": "Wyze",
-        "required": true
+        "default": "Wyze"
       },
 
       "auth": {
         "type": "object",
         "title": "Account",
+        "required": ["username", "password", "keyId", "apiKey"],
         "properties": {
           "username": {
             "title": "Email Address",
             "type": "string",
-            "required": true,
             "format": "email",
             "description": "The email address used for your Wyze account."
           },
           "password": {
             "title": "Password",
             "type": "string",
-            "required": true,
+            "x-schema-form": { "type": "password" },
             "description": "Your Wyze account password."
           },
           "keyId": {
             "title": "Key ID",
             "type": "string",
-            "required": true,
             "description": "API Key ID from the official Wyze portal: https://developer-api-console.wyze.com"
           },
           "apiKey": {
             "title": "API Key",
             "type": "string",
-            "required": true,
+            "x-schema-form": { "type": "password" },
             "description": "API Key from the official Wyze portal."
+          },
+          "mfaCode": {
+            "title": "2FA/MFA Code",
+            "type": "string",
+            "description": "Only needed if Wyze asks for a 2-factor code at login. Enter the current 6-digit code from your authenticator app; it works once."
+          },
+          "totpSecret": {
+            "title": "Authenticator-app 2FA Secret (deprecated)",
+            "type": "string",
+            "x-schema-form": { "type": "password" },
+            "description": "Deprecated and no longer used: the API key above is enough for most accounts. A value already here is kept and ignored, and the log says so. You can clear it."
           },
           "secretsFile": {
             "title": "Secrets File (optional)",
@@ -83,11 +94,11 @@
         "items": {
           "type": "object",
           "title": "Camera",
+          "required": ["mac"],
           "properties": {
             "mac": {
               "title": "MAC Address",
               "type": "string",
-              "required": true,
               "placeholder": "AA:BB:CC:DD:EE:FF",
               "description": "MAC address of the Wyze camera (find it in the Wyze app under device info)."
             },
@@ -101,7 +112,19 @@
             "floodlight": { "title": "Expose Floodlight Switch", "type": "boolean", "default": false },
             "siren": { "title": "Expose Siren Switch", "type": "boolean", "default": false },
             "notifications": { "title": "Expose Notifications Switch", "type": "boolean", "default": false },
-            "motionDetection": { "title": "Expose Motion Detection Switch", "type": "boolean", "default": false, "description": "Toggles whether the camera looks for motion at all (different from notifications). Useful if you want to keep the camera powered on but pause motion-triggered events via HomeKit automation." }
+            "motionDetection": { "title": "Expose Motion Detection Switch", "type": "boolean", "default": false, "description": "Toggles whether the camera looks for motion at all (different from notifications). Useful if you want to keep the camera powered on but pause motion-triggered events via HomeKit automation." },
+            "nightVision": { "title": "Expose Night Vision Switches", "type": "boolean", "default": false, "description": "Two HomeKit switches, Night Vision (always on) and Night Vision Auto; with both off, night vision is off. The camera is asked directly over your home network, so Homebridge must be on the same network as the camera, and only cameras that answer there (Cam v2, Cam v3 and Doorbell v2 tested) can use it. Each change takes a few seconds, and the Wyze app cannot watch that camera while it happens." },
+            "motionSensor": { "title": "Motion Sensor", "type": "string", "default": "auto", "oneOf": [
+              { "title": "Automatic (add it when the camera has motion events)", "enum": ["auto"] },
+              { "title": "Always", "enum": ["on"] },
+              { "title": "Never", "enum": ["off"] }
+            ], "description": "A HomeKit motion sensor for HomeKit automations. It turns on when Wyze lists a new motion event less than 30 seconds old (read from the cloud event list, so it can lag by up to about 10 seconds) and off again 2 minutes after the event (Sensor Stays On, in Advanced) unless another comes. Automatic adds it only to a camera whose last week of events shows motion, so a camera without a Wyze plan does not get a sensor that never fires." },
+            "soundSensor": { "title": "Sound Sensor", "type": "string", "default": "auto", "oneOf": [
+              { "title": "Automatic (add it when the camera has sound events)", "enum": ["auto"] },
+              { "title": "Always", "enum": ["on"] },
+              { "title": "Never", "enum": ["off"] }
+            ], "description": "A second HomeKit motion sensor, named Sound, that turns on when Wyze lists a new sound event less than 30 seconds old and off again 2 minutes after the event (Sensor Stays On, in Advanced) unless another comes. Automatic adds it only to a camera whose last week of events shows sound. With it on, sound no longer triggers the camera's Motion Sensor or its picture refresh." },
+            "detections": { "title": "Detection Sensors", "type": "array", "uniqueItems": true, "items": { "type": "string" }, "description": "HomeKit sensors, one per AI label Wyze puts on this camera's events, for HomeKit automations (for example, turn on a light when a person is detected). Leave empty for automatic: a sensor is added for each label the camera's last week of events carries, which needs a Wyze plan with AI detection. Choose labels to have exactly those (Face is only ever added when you choose it, and needs face recognition turned on in the Wyze app), or none for no detection sensors. Each follows the same rules as the Motion Sensor: on for a labelled event less than 30 seconds old, off again 2 minutes after the event (Sensor Stays On, in Advanced) unless another comes. Any other label name is kept in the list and does nothing until the plugin supports it." }
           }
         }
       },
@@ -218,6 +241,42 @@
         "type": "object",
         "title": "Advanced",
         "properties": {
+          "snapshotRefreshSeconds": {
+            "title": "Camera Picture Refresh (seconds)",
+            "type": "integer",
+            "placeholder": "30",
+            "minimum": 0,
+            "maximum": 3600,
+            "description": "How often each camera's picture in the Home app is refreshed. Leave empty for the default of 30. 0 turns it off. Each refresh is a short live connection, so a Wyze app view of the same camera may be interrupted."
+          },
+          "snapshotOnMotion": {
+            "title": "Refresh the Picture on Motion",
+            "type": "boolean",
+            "default": true,
+            "description": "Take a new picture as soon as Wyze reports motion on a camera."
+          },
+          "sensorHoldSeconds": {
+            "title": "Sensor Stays On (seconds)",
+            "type": "integer",
+            "placeholder": "120",
+            "minimum": 5,
+            "maximum": 3600,
+            "description": "How long a camera's Motion, Sound and detection sensors stay on after the last new event Wyze reports. Leave empty for the default of 120 (2 minutes). Cameras without a Wyze plan report about one event every 5 minutes, so a longer time keeps the tile on between them."
+          },
+          "warmLiveView": {
+            "title": "Quick Live View",
+            "type": "boolean",
+            "default": false,
+            "description": "While the Home app is looking at a camera, open a connection to it ahead of time (kept about 45 seconds) so live view starts almost at once and the picture stays fresh. While it is open the Wyze app cannot watch that camera."
+          },
+          "webServerPort": {
+            "title": "Camera Test Page Port",
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "0 (the default) turns the camera test page off. A port from 1024 to 65535 turns it on at that port; lower ports need root and are refused. The page runs in Homebridge, tests each camera over your home network and, after you confirm, can set night vision. The Homebridge log prints a link that ends with a token; open it from a computer on the same network. It is plain HTTP, so do not forward the port to the internet. Restart Homebridge after changing it."
+          },
           "deviceTypeOverrides": {
             "title": "Device Type Overrides",
             "type": "object",
@@ -246,132 +305,102 @@
 
   "form": [
     {
-      "type": "tabarray",
-      "title": "{{ value.title }}",
+      "type": "fieldset",
+      "title": "Account",
+      "expandable": true,
+      "expanded": true,
+      "items": [
+        "auth.username",
+        "auth.password",
+        "auth.keyId",
+        "auth.apiKey",
+        {
+          "type": "fieldset",
+          "title": "Use a secrets file instead",
+          "expandable": true,
+          "expanded": false,
+          "items": ["auth.secretsFile"]
+        }
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Polling",
+      "expandable": true,
+      "expanded": false,
+      "items": [
+        "polling.refreshInterval",
+        "polling.lowBatteryPercentage"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Thermostat",
+      "expandable": true,
+      "expanded": false,
+      "items": [
+        "thermostat.exposeRoomSensors",
+        "thermostat.mode"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Robot Vacuum",
+      "expandable": true,
+      "expanded": false,
+      "items": [
+        "vacuum.perRoomSwitches"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Home Monitoring System (HMS)",
+      "expandable": true,
+      "expanded": false,
+      "items": [
+        "hms.enabled"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Excludes",
+      "expandable": true,
+      "expanded": false,
       "items": [
         {
-          "type": "section",
-          "title": "Account",
-          "expandable": false,
-          "items": [
-            "auth.username",
-            "auth.password",
-            "auth.keyId",
-            "auth.apiKey",
-            {
-              "type": "section",
-              "title": "Use a secrets file instead",
-              "expandable": true,
-              "expanded": false,
-              "items": ["auth.secretsFile"]
-            }
-          ]
+          "key": "excludes.macs",
+          "type": "array",
+          "buttonText": "Add MAC",
+          "items": ["excludes.macs[]"]
         },
-        {
-          "type": "section",
-          "title": "Polling",
-          "expandable": false,
-          "items": [
-            "polling.refreshInterval",
-            "polling.lowBatteryPercentage"
-          ]
-        },
-        {
-          "type": "section",
-          "title": "Cameras",
-          "expandable": false,
-          "items": [
-            {
-              "key": "cameras",
-              "type": "array",
-              "title": " ",
-              "buttonText": "Add Camera",
-              "items": [
-                {
-                  "type": "fieldset",
-                  "title": "{{ value.name || value.mac || 'Camera' }}",
-                  "items": [
-                    "cameras[].mac",
-                    "cameras[].name",
-                    {
-                      "type": "flex",
-                      "flex-flow": "row wrap",
-                      "items": [
-                        "cameras[].garage",
-                        "cameras[].spotlight",
-                        "cameras[].floodlight",
-                        "cameras[].siren",
-                        "cameras[].notifications",
-                        "cameras[].motionDetection"
-                      ]
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "section",
-          "title": "Thermostat",
-          "expandable": false,
-          "items": [
-            "thermostat.exposeRoomSensors",
-            "thermostat.mode"
-          ]
-        },
-        {
-          "type": "section",
-          "title": "Robot Vacuum",
-          "expandable": false,
-          "items": [
-            "vacuum.perRoomSwitches"
-          ]
-        },
-        {
-          "type": "section",
-          "title": "Home Monitoring System (HMS)",
-          "expandable": false,
-          "items": [
-            "hms.enabled"
-          ]
-        },
-        {
-          "type": "section",
-          "title": "Excludes",
-          "expandable": true,
-          "expanded": false,
-          "items": [
-            {
-              "key": "excludes.macs",
-              "type": "array",
-              "buttonText": "Add MAC",
-              "items": ["excludes.macs[]"]
-            },
-            "excludes.types"
-          ]
-        },
-        {
-          "type": "section",
-          "title": "Logging",
-          "expandable": false,
-          "items": [
-            "logging.level",
-            "logging.disableRedaction"
-          ]
-        },
-        {
-          "type": "section",
-          "title": "Advanced",
-          "expandable": true,
-          "expanded": false,
-          "items": [
-            "advanced.deviceTypeOverrides",
-            "advanced.dangerouslyAllowCustomBaseUrls",
-            "advanced.authBaseUrl",
-            "advanced.apiBaseUrl"
-          ]
-        }
+        "excludes.types"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Logging",
+      "expandable": true,
+      "expanded": false,
+      "items": [
+        "logging.level",
+        "logging.disableRedaction"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Advanced",
+      "expandable": true,
+      "expanded": false,
+      "items": [
+        { "key": "advanced.snapshotRefreshSeconds", "type": "number" },
+        "advanced.snapshotOnMotion",
+        { "key": "advanced.sensorHoldSeconds", "type": "number" },
+        "advanced.warmLiveView",
+        { "key": "advanced.webServerPort", "type": "number" },
+        "advanced.deviceTypeOverrides",
+        "advanced.dangerouslyAllowCustomBaseUrls",
+        "advanced.authBaseUrl",
+        "advanced.apiBaseUrl"
       ]
     }
   ]

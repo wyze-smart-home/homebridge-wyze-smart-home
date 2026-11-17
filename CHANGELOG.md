@@ -8,6 +8,120 @@ After you have done that if you feel like my work has been valuable to you I wel
 
 ## Releases
 
+This plugin is built on the [wyze-api](https://github.com/identd113/wyze-api) library. For API-level changes (login, 2FA, device commands), see the [wyze-api changelog](https://github.com/identd113/wyze-api/blob/2.x/CHANGELOG.md).
+
+### v2.0.0-beta.4
+
+Everything since the last published beta, **2.0.0-beta.3**. An earlier `2.0.0-beta.4` was prepared but never published to npm; its number is reused for this release and its changes are in it. It pairs with `wyze-api` 2.0.0-beta.4, which npm installs for you. With an older `wyze-api` the features that need it switch themselves off, and the log says so.
+
+**Before you upgrade**
+- **Breaking: the Privacy switch is now on when the camera is off.** It used to be on when the camera was on, the opposite of its name. Turning Privacy on now powers the camera off, and turning it off powers it on. There is no setting to keep the old direction. Any scene, automation or Siri phrase that uses a camera's Privacy switch now does the opposite and needs to be changed: where it turned Privacy on to switch the camera on, it must turn Privacy off, and the other way round. After upgrading, check each such automation.
+- **New HomeKit tiles appear by themselves.** A camera whose recent events show motion gets a Motion Sensor, one that shows sound gets a Sound Sensor, and one on a Wyze plan with AI detection gets Person, Vehicle, Pet and Package sensors. You can switch any of them off (see "A card for each camera" below).
+- **Camera options moved.** The Cameras section is no longer in the settings form. Each camera's options (the extra switches and the sensors) are on that camera's card, under the form, and are saved with the card's own button. Your existing config keeps working and nothing in it changes.
+- **The settings form is now plain sections** that open and close, with Account open, instead of a strip of tabs.
+- **Homebridge 1.x must be 1.8.5 or newer.** `engines.homebridge` is now `^1.8.5 || ^2.0.0` (it said `^1.6.0`). This plugin needs Node 22, and Homebridge 1.x supports Node 22 only from 1.8.5 (Node 24 from 1.11.1; no 1.x supports Node 26). On an older Homebridge 1.x, update Homebridge first.
+- **Rolling back:** `npm install homebridge-wyze-smart-home@2.0.0-beta.3`. Your config keeps working and the new settings are ignored. Cameras then have the old Privacy direction again.
+
+**New**
+- **Night vision switches** (`cameras[].nightVision`, off by default). Two HomeKit switches for a camera: Night Vision (always on) and Night Vision Auto; with both off, night vision is off. The Wyze cloud does not offer this setting, so the plugin asks the camera directly over your home network. Homebridge has to be on the same network as the camera, and only cameras that answer there work (the Cam v2, Cam v3 and Doorbell v2 are tested). A change takes a few seconds, and the Wyze app cannot watch that camera meanwhile.
+- **A card for each camera on the settings page.** Everything about one camera in one place: its Cam Plus plan, the sensors it was found to have (click one to turn it on or off), a warning when its sound recording is off in Wyze, and checkboxes for its extra HomeKit switches (garage door opener, spotlight, floodlight, siren, notifications, motion detection, night vision). Sensors are labelled as sensors and the switches as switches, so "Motion sensor" (reports motion) is not confused with "Motion Detection on/off" (turns the camera's own detection off and on). A notice appears while a change on a card is not saved yet.
+- **A camera test page** (optional, off by default). Set `advanced.webServerPort` to a port from 1024 up and restart Homebridge. The settings page then has an **Open camera test page** button. The page runs in Homebridge and is reached from another computer on your network by a link with a token that changes at every restart; it serves only your local network. It lists your cameras and tests each one directly, showing each step and what the camera answered, and it shows the sensors and the Advanced settings as the config file holds them (read-only: changes are made on the settings page).
+- **Report a device that is not supported.** The test page's **Other devices** tab lists devices on your account that the plugin does not support yet. **Test and collect report** reads what Wyze knows about the device (read only, naming each endpoint it asks, with your MAC address, device name, IP address and Wi-Fi name removed), and **Report this device on GitHub** opens the add-a-device form with the model, type and findings filled in. Nothing is sent until you submit the form, and you can download the report to attach.
+- **Motion and Sound sensors for cameras.** A Motion Sensor and a Sound Sensor are added to each camera that has the events. `motionSensor` and `soundSensor` per camera are `auto` (the default: added when the camera's last week of events shows events of that kind), `on` or `off`. A sensor reacts only to an event less than 30 seconds old, so reading older events again never switches it. With the Sound Sensor on, sound no longer switches that camera's Motion Sensor.
+- **Person, Vehicle, Pet and Package sensors** for a camera whose events carry Wyze's AI labels (a Wyze plan with AI detection), with the same rules. `detections` per camera is empty (automatic), a list such as `["person", "pet", "face"]` for exactly those, or `["none"]`. Face is available only by naming it.
+- **Sensors stay on for 2 minutes** (`advanced.sensorHoldSeconds`, 5 to 3600), counted from the time of the event on Wyze's clock. A newer event extends it.
+- **The Cam Plus plan on each camera card, and in the log.** The plugin reads your account's plans once at startup and shows "Cam Plus: Annual Plan, until 2027-03-03", or "No Cam Plus plan" with the note that Wyze then lists about one event per 5 minutes. The log warns about a camera with no plan, a lapsed plan, or one that ends within 14 days.
+- **A camera switched off with its Privacy switch shows a black picture with a crossed-out red dot** in the Home app, instead of its last picture (which looked live).
+- **The Advanced options are on the settings screen:** Picture Refresh, Refresh the Picture on Motion, Sensor Stays On, Quick Live View and the Camera Test Page Port. The number options are plain number inputs, not sliders.
+- **Fewer requests to Wyze.** The properties of all cameras and lights are read in one request per refresh, not one request each. A device that cannot be served that way reads its own, and the log says so once.
+- **Unsupported devices are named in the log** when the model is known: the Duo Cam Doorbell, Window Cam, Battery Video Doorbell and Solar Cam Pan (`ME_WCO3`), with a link for helping to get them supported. All four are also in the new-device form's list, and the README's "Not Yet Supported" table adds the Solar Cam Pan and notes that the October 2026 Solar Cam has no model code yet.
+- **Better GitHub forms.** The device form takes reports that a device works, partly works or does not work, lets you pick the device by name, and starts on "It is not supported yet". The bug form asks for the `wyze-api` version and points to the camera test page for one camera that will not connect. Pasted logs and configs are checked for credentials.
+
+**Fixed**
+- **Upgrading an older config keeps `snapshotOnMotion: false`.** The rewrite to the 2.x shape dropped every `false` in `advanced`, but this option is on unless set, so an explicit opt-out was lost and motion-triggered pictures came back (which wakes a battery camera on every event). Options that are off by default are still left out.
+- **Upgrading an older config keeps `pluginLoggingEnabled: true`.** The legacy toggle was never read when the log level was worked out, so the plugin's verbose lines disappeared after the rewrite. It now gives `debug`, as `apiLogEnabled` does; an explicit log level still wins.
+- **Upgrading an old config no longer drops the child bridge settings** (`_bridge`: its name, pin and port), which made every accessory need pairing again. The log note about the backup now says it holds your old password.
+- **A failed lookup of a thermostat's room sensors no longer removes them** (and their HomeKit rooms and automations) from HomeKit.
+- **Only one refresh runs at a time,** the refresh loops stop when Homebridge shuts down, and a camera that was removed no longer keeps being polled.
+- **A secrets file that cannot be read leaves the plugin inactive with a message** instead of crashing Homebridge at start-up.
+- **The siren, light, notification and motion detection switches no longer flip back for a moment** after you use them.
+- **A live view that cannot be prepared fails at once with a log line** instead of spinning until HomeKit gives up.
+- **A failed light, plug or lock command is always logged as an error,** whatever the log level; a Lock Bolt v2 that has not been read shows "unknown", not "secured".
+- **A mesh light colour is sent once, with both hue and saturation,** even when HomeKit sends only one of them.
+- **Smaller:** a picture download is limited to 5 MB, one camera's failure no longer stops the others getting their events, the process-wide error handlers are installed once, and a `deviceTypeOverrides` category named like an object property is ignored.
+- **The Motion Sensor was not added to a camera that had no other switch configured.**
+- **A Home Monitoring System (S1 Gateway) was never loaded with `hms.enabled` on.**
+- **Rewriting an old flat config deleted** `irrigationZone`, the Ford and Olive keys and `appInfo`. They are kept now.
+- **An empty device list from Wyze could remove every accessory.** It is now ignored until it has been empty three refreshes in a row.
+- **A lock that had not been read reported "secured".** It reports unknown until it has been read.
+- **A bulb that had not synced could be set to 1% brightness** and a bogus colour temperature. Placeholder values are skipped.
+- **Logging in at start-up could happen twice,** which could fail a one-time 2FA code on the repeat. Requests now share one login.
+- **A missing or broken ffmpeg no longer takes Homebridge down.** The live view fails with a reason in the log.
+- **A live view is no longer cut off by Quick Live View.**
+- **Requests to Wyze time out after 30 seconds,** so a stalled connection can no longer freeze login and every refresh that waits on it.
+- **The Cam OG Telephoto 3x is recognised** (Wyze reports it as `GW_GC2`). Not tested on a real one.
+- **Fewer libraries are installed:** `koffi` and `querystring` are no longer pulled in.
+
+**Documentation**
+- The README shows a minimum, a recommended and a maximum config, with a table of what each adds, and says when each advanced setting is worth changing.
+
+### v2.0.0-beta.3
+
+Pairs with `wyze-api@2.0.0-beta.3` ([wyze-api changes](https://github.com/identd113/wyze-api/blob/2.x/CHANGELOG.md)). Requires Node.js 22 or newer.
+
+**Before you update**
+- **Node.js 22 or newer is required** (`engines.node` is now `^22 || ^24 || ^26`; Node 18 and 20 are no longer supported). The upgraded `werift` (`^0.25.1`) needs it and fixes the known `ip`/`uuid` vulnerabilities. Homebridge 2.x already requires Node 22+; Homebridge 1.x users must be on Node 22 or newer.
+- **New cameras can appear.** Cam Pan v4, Bulb Cam, Floodlight v2 and the Doorbell v2 are now recognized. If you own one, a new camera shows up in the Homebridge log with its own setup code and has to be paired in the Home app (cameras are separate HomeKit accessories). Nothing already paired changes. A `deviceTypeOverrides` entry you added for one of these is now redundant and is skipped.
+- **Config upgrade keeps `securityRefreshInterval`** and the app-identity options when a flat config is converted.
+
+**New devices**
+- **Wyze Cam Doorbell v2 (`HL_DB2`)** as a HomeKit doorbell: a button press rings the Home app (read from Wyze's cloud event list every 5 seconds, one ring per press), plus snapshots and live video with audio (its stream is 640x480 at 15 fps, so it is advertised as 4:3 and the Home app no longer letterboxes it). It has no Privacy switch, because Wyze ignores power-off for this model. The doorbell-press event and the power and siren controls are not verified yet.
+- **Wyze Cam Pan v4 (`HL_PAN4`)** and **Bulb Cam (`HL_BC`) light control**: power, siren, spotlight, notifications and state go through the right Wyze API for these models (ported from SecKatie/wyzeapy, via wyze-api). Not yet verified on real hardware.
+- **Cameras on the newer devicemgmt API** (Floodlight Pro, Battery Cam Pro, OG, Pan v4) now report their light, siren, motion and power state, and Pan v4 and similar cameras with only the privacy switch configured read their power state from that API.
+- **Floodlight v2 (`HL_CFL2`)** is recognized without a `deviceTypeOverrides` entry. Its light toggle ([#264](https://github.com/wyze-smart-home/homebridge-wyze-smart-home/issues/264)) is still unresolved.
+
+**Camera switches and tiles**
+- **A Floodlight switch appears by itself** on a camera with a Wyze floodlight accessory (a Cam v3 with the floodlight). No entry under `cameras` is needed. The `spotlight` and `floodlight` switches both follow the camera's light, including changes made in the Wyze app.
+- **Switches are named for what they do**: Privacy, Spotlight, Floodlight, Siren, Notifications, Motion Detection and Garage Door, without the camera's name in front (the Home app adds the room). Switches you already have keep their names.
+- **The thermostat has its humidity tile again**, as a separate Humidity Sensor, as in 0.5.x.
+
+**Camera pictures and live view**
+- **Pictures stay current.** Each camera's snapshot is refreshed every 30 seconds (the cameras take turns, evenly spaced, never at the same moment), and again as soon as Wyze's event list shows new motion. One shared request covers all the cameras every 10 seconds, or every 5 seconds when a doorbell is present, and the doorbell press check uses the same request. A motion picture goes ahead of the waiting refreshes and resets that camera's regular timer.
+- **A picture is ready at startup.** A few seconds after Homebridge starts, each camera fetches one snapshot (one at a time, in the background), so the first time the Home app opens a tile it shows an image. Offline, switched-off and streaming cameras are skipped. A failure is logged and never stops startup.
+- **Quick Live View** (`advanced.warmLiveView`, off by default). While the Home app is looking at a camera the plugin opens a connection ahead of time (about 45 seconds, renewed by each picture request), so a live view starts almost at once and pictures come from the open connection's latest keyframe. While it is open the Wyze app cannot watch that camera.
+- **Faster live view start.** Preparing a stream fetches the camera's connection details straight away, and the stream start keeps the camera's first keyframe instead of asking for another. Each live stream logs a debug `timing:` line.
+- **Battery cameras and many cameras.** Battery-powered cameras (Cam Outdoor, Cam Outdoor v2, Battery Cam Pro) are not refreshed on a timer by default and never get Quick Live View, since a connection wakes them. With more cameras than can be captured in time, each is refreshed less often (the log says how often) instead of the plugin capturing nonstop.
+- **Fewer requests.** A picture capture no longer downloads the whole device list to find the camera's model, which removes about 6 `get_object_list` requests a minute with three cameras.
+- **Live view and snapshots no longer fight over a camera.** A camera serves one WebRTC session at a time. Concurrent snapshot requests now share one capture, a snapshot shows the last picture while a live stream is running, and a stream waits for a capture already in flight.
+- **Live streams close cleanly** when Homebridge shuts down or restarts, so a camera is not left holding the old viewer.
+- Camera log lines carry the camera's name, and the camera refresh line says "camera power on/off" instead of "privacy on/off".
+
+**Login and 2FA**
+- **`totpSecret` option**: the authenticator-app secret, so the plugin generates a fresh 2FA code on every login (a typed `mfaCode` expires in 30 seconds). Optional; existing configs are unaffected.
+- **2FA login restored** (authenticator apps only): `mfaCode` is back in the config schema and README. wyze-api had dropped it in Feb 2024. Not yet verified against a live 2FA account.
+- Pasted 2FA values are cleaned and checked (spaces, newlines, dashes, quotes and `otpauth://` links are handled), and a malformed value gives a clear login error.
+- **Fixed the stuck re-login loop**: a stale saved token no longer blocks logging in again (the "cannot find any devices" reports in #306 and #277). The refresh timer, which fired every ~2.9 minutes instead of every 48 hours, is fixed, and concurrent refreshes are combined.
+
+**Fixes**
+- **Wall switches and Palm Locks hold the state you just set.** A poll that arrived before Wyze had applied the change could flip the tile back and forth; they now wait 15 seconds like plugs and lights.
+- **Device names are cleaned on every refresh**, not only when the accessory is created. Control characters and over-long names no longer reach the Home app or the log.
+- **Accessories now persist after a camera is discovered on Homebridge 2.x** (#311). Cameras are external accessories, and saving their state made Homebridge fail to write the whole cache, so every device found afterwards was recreated on each restart. Thanks to the reporter for the diagnosis.
+- **The log says which versions are loaded.** One line at startup shows the plugin and `wyze-api` versions, for example `[Wyze] homebridge-wyze-smart-home 2.0.0-beta.3, wyze-api 2.0.0-beta.3 (needs ^2.0.0-beta.3)`. The library can be newer than the one a release was built with, so this is the first thing to include in a report.
+- **Fatal startup problems no longer crash or damage the bridge.** A missing `username`, or an installed wyze-api older than the declared minimum, logs one `[FATAL]` error and leaves the platform idle. Cached accessories are left alone, so nothing is removed from HomeKit.
+- **The settings screen no longer shows "Config validation failed".** Password, API Key and the 2FA secret are masked, and whitespace pasted around the Key ID or API Key is trimmed. The picture refresh field has no default in the screen, so battery cameras stay off the timer unless you set it.
+- A devicemgmt failure marks every camera service inactive, not only the privacy switch.
+- Quieter default log: per-request lines from wyze-api are at `debug`.
+
+**Reporting problems and new devices**
+- **Issue forms** for bugs, feature requests, questions and new devices. The new-device form asks for the model code and the device information from the debug log, and a script labels each issue (`new device`, `model:<code>`, the kind of device), skips devices that cannot work in HomeKit (scales, headphones, chime boxes), asks for redaction when a device name, IP address, Wi-Fi name or MAC is left in, and counts repeat requests for the same model.
+- Library problems (wyze-api) are reported in this repository too.
+- The README configuration section now lists required and optional fields with their defaults and example values.
+
+**Under the hood**
+- The minimum wyze-api version is declared once, in `package.json` (`^2.0.0-beta.3`). The plugin checks the installed wyze-api against it at startup and logs a clear error instead of failing later. The publish workflows check that a published wyze-api satisfies it, and the stable workflow counts only stable versions.
+- Removed the `src/wyze-api` git submodule. `wyze-api` is only an npm dependency now; for local development, clone it next to this repository and run `npm run dev-link`.
+- New tests: the wyze-api version check, a guard that every wyze-api method the plugin calls exists, the camera light and name logic, config migration, the thermostat humidity tile, wall-switch grace and the issue triage.
+
 ### v2.0.0-beta.2
 
 Merges `main`'s unreleased 0.5.x hardening work (24 commits since the branches last synced at `412b891`) into the 2.0.0 line. Manual reconciliation across 18 conflicting files, not a mechanical merge — `main` and `2.0.0` had independently built overlapping features (most notably two separate Lock Bolt V2/Palm Lock implementations and two separate Thermostat fan/emheat/hold/kidlock implementations) that needed combining rather than picking one side.
@@ -247,8 +361,8 @@ Fixes for regressions and gaps found in code review of the 0.5.59/0.5.60 optimis
 
 ### v0.5.46
 - Update thermostat structure to new format
-- Update thermostat to have min/max thresholds closer to Wyze Thermostat thresholds -  https://github.com/jfarmer08/homebridge-wyze-smart-home/issues/203
-- Update thermostat to avoid constant reboot -  https://github.com/jfarmer08/homebridge-wyze-smart-home/issues/228
+- Update thermostat to have min/max thresholds closer to Wyze Thermostat thresholds -  https://github.com/wyze-smart-home/homebridge-wyze-smart-home/issues/203
+- Update thermostat to avoid constant reboot -  https://github.com/wyze-smart-home/homebridge-wyze-smart-home/issues/228
 
 ### v0.5.45
 - Increase Wyze-api Verison 1.0.7
@@ -319,13 +433,13 @@ Fixes for regressions and gaps found in code review of the 0.5.59/0.5.60 optimis
 - Allow all sub models.
 
 ### v0.5.33
-- Updated Thermostat behavior for single mode usage (heat/cool) (Thanks https://github.com/carTloyal123) - https://github.com/jfarmer08/homebridge-wyze-smart-home/issues/111
+- Updated Thermostat behavior for single mode usage (heat/cool) (Thanks https://github.com/carTloyal123) - https://github.com/wyze-smart-home/homebridge-wyze-smart-home/issues/111
 
 ### v0.5.32
-- Improve logging - https://github.com/jfarmer08/homebridge-wyze-smart-home/issues/117
+- Improve logging - https://github.com/wyze-smart-home/homebridge-wyze-smart-home/issues/117
 
 ### v0.5.31
-- Improve Camera support - https://github.com/jfarmer08/homebridge-wyze-smart-home/issues/92
+- Improve Camera support - https://github.com/wyze-smart-home/homebridge-wyze-smart-home/issues/92
 
 ### v0.5.30
 - HMS Code Clean up

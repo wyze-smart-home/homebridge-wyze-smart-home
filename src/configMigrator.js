@@ -54,13 +54,68 @@ const CAMERA_FEATURE_KEYS = [
   ["siren", "sirenAccessory"],
   ["notifications", "notificationAccessory"],
   ["motionDetection", "motionDetectionAccessory"],
+  ["nightVision", "nightVisionAccessory"],
 ];
+
+// The Motion and Sound sensors are "auto" (the default: added when the camera's event list shows
+// events of that kind), "on" or "off". `true` is "on". Anything else, including the `false` that
+// used to mean "not switched on", is "auto".
+const CAMERA_SENSOR_KEYS = [
+  ["motionSensor", "motionSensorAccessory", "motionSensorOff"],
+  ["soundSensor", "soundSensorAccessory", "soundSensorOff"],
+];
+
+// The AI labels that can get a sensor of their own (see camera/detectionSensors.js), or "none". An empty
+// list, the default, is automatic.
+// Names the plugin does not know are kept (and ignored when sensors are built): a list is exact.
+function normalizeDetections(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((name) => String(name).trim().toLowerCase()).filter(Boolean))];
+}
+
+function sensorMode(value) {
+  if (value === true || value === "on") return "on";
+  if (value === "off") return "off";
+  return "auto";
+}
 
 const ADVANCED_KEYS = [
   "deviceTypeOverrides",
   "dangerouslyAllowCustomBaseUrls",
   "authBaseUrl",
   "apiBaseUrl",
+  // Camera pictures and live view (see the README).
+  "snapshotRefreshSeconds",
+  "snapshotOnMotion",
+  "sensorHoldSeconds",
+  "warmLiveView",
+  // The camera test page (see wyze-api's src/web): 0 is off, 1024 to 65535 is the port it listens on.
+  "webServerPort",
+];
+
+// Advanced options that are ON unless set: a `false` here is the user's choice, so rewriting the config must keep it
+// (dropping it would switch the option back on). For every other advanced option `false` is the default.
+const ADVANCED_DEFAULT_ON = new Set(["snapshotOnMotion"]);
+
+// Top-level options the plugin still reads that have no nested home. They are kept
+// as they are when a flat config is rewritten, so a migration doesn't reset them.
+const PASSTHROUGH_KEYS = [
+  "securityRefreshInterval",
+  "phoneId",
+  "authApiKey",
+  "appName",
+  "appVer",
+  "appVersion",
+  "userAgent",
+  "sc",
+  "sv",
+  // Read by WyzeSmartHome (locks, thermostat) and WyzeIrrigation.
+  "irrigationZone",
+  "fordAppKey",
+  "fordAppSecret",
+  "oliveSigningSecret",
+  "oliveAppId",
+  "appInfo",
 ];
 
 function isPlainObject(v) {
@@ -86,6 +141,7 @@ function normalize(input) {
     apiKey: auth.apiKey ?? c.apiKey ?? "",
     secretsFile: auth.secretsFile ?? c.secretsFile ?? "",
     mfaCode: auth.mfaCode ?? c.mfaCode ?? "",
+    totpSecret: auth.totpSecret ?? c.totpSecret ?? "",
   };
   // Mirror to flat for legacy consumers.
   c.username = c.auth.username;
@@ -94,6 +150,7 @@ function normalize(input) {
   c.apiKey = c.auth.apiKey;
   c.secretsFile = c.auth.secretsFile;
   c.mfaCode = c.auth.mfaCode;
+  c.totpSecret = c.auth.totpSecret;
 
   // --- Polling ---
   const polling = isPlainObject(c.polling) ? c.polling : {};
@@ -119,6 +176,10 @@ function normalize(input) {
         siren: !!cam.siren,
         notifications: !!cam.notifications,
         motionDetection: !!cam.motionDetection,
+        nightVision: !!cam.nightVision,
+        motionSensor: sensorMode(cam.motionSensor),
+        soundSensor: sensorMode(cam.soundSensor),
+        detections: normalizeDetections(cam.detections),
       });
     }
   }
@@ -129,9 +190,24 @@ function normalize(input) {
       const row = cameraMap.get(mac) || {
         mac,
         name: "",
-        garage: false, spotlight: false, floodlight: false, siren: false, notifications: false, motionDetection: false,
+        garage: false, spotlight: false, floodlight: false, siren: false, notifications: false, motionDetection: false, nightVision: false,
+        motionSensor: "auto", soundSensor: "auto", detections: [],
       };
       row[feature] = true;
+      cameraMap.set(mac, row);
+    }
+  }
+  for (const [feature, onKey] of CAMERA_SENSOR_KEYS) {
+    const arr = Array.isArray(c[onKey]) ? c[onKey] : [];
+    for (const mac of arr) {
+      if (typeof mac !== "string" || !mac) continue;
+      const row = cameraMap.get(mac) || {
+        mac,
+        name: "",
+        garage: false, spotlight: false, floodlight: false, siren: false, notifications: false, motionDetection: false, nightVision: false,
+        motionSensor: "auto", soundSensor: "auto", detections: [],
+      };
+      row[feature] = "on";
       cameraMap.set(mac, row);
     }
   }
@@ -139,6 +215,10 @@ function normalize(input) {
   // Mirror back to legacy arrays so existing accessory code keeps working.
   for (const [feature, legacyKey] of CAMERA_FEATURE_KEYS) {
     c[legacyKey] = c.cameras.filter((cam) => cam[feature]).map((cam) => cam.mac);
+  }
+  for (const [feature, onKey, offKey] of CAMERA_SENSOR_KEYS) {
+    c[onKey] = c.cameras.filter((cam) => cam[feature] === "on").map((cam) => cam.mac);
+    c[offKey] = c.cameras.filter((cam) => cam[feature] === "off").map((cam) => cam.mac);
   }
 
   // --- Thermostat ---
@@ -192,7 +272,8 @@ function normalize(input) {
   const logging = isPlainObject(c.logging) ? c.logging : {};
   // Resolution priority: nested level → flat logLevel → legacy apiLogEnabled boolean → default 'info'.
   let level = logging.level ?? c.logLevel;
-  if (!level) level = c.apiLogEnabled ? "debug" : "info";
+  // Either legacy toggle meant "more log lines", and both map onto debug (see pluginLoggingEnabled below).
+  if (!level) level = c.apiLogEnabled || c.pluginLoggingEnabled ? "debug" : "info";
   level = String(level).toLowerCase();
   if (!["error", "warn", "info", "debug"].includes(level)) level = "info";
 
@@ -261,6 +342,12 @@ function toCanonical2x(normalized, platformMeta) {
 
   if (normalized.auth.secretsFile) out.auth.secretsFile = normalized.auth.secretsFile;
   if (normalized.auth.mfaCode) out.auth.mfaCode = normalized.auth.mfaCode;
+  if (normalized.auth.totpSecret) out.auth.totpSecret = normalized.auth.totpSecret;
+
+  for (const k of PASSTHROUGH_KEYS) {
+    const v = normalized[k];
+    if (v != null && v !== "") out[k] = v;
+  }
 
   // Only include the advanced block if anything in it is set, so the
   // file stays clean for the 99% of users who never touch it.
@@ -269,7 +356,7 @@ function toCanonical2x(normalized, platformMeta) {
     const v = normalized.advanced?.[k];
     if (v == null) continue;
     if (typeof v === "object" && Object.keys(v).length === 0) continue;
-    if (typeof v === "boolean" && v === false) continue;
+    if (typeof v === "boolean" && v === false && !ADVANCED_DEFAULT_ON.has(k)) continue;
     if (typeof v === "string" && v === "") continue;
     advanced[k] = v;
   }
@@ -347,10 +434,17 @@ function rewriteHomebridgeConfigOnDisk({ configPath, platformAlias, log }) {
     const original = parsed.platforms[i];
     if (isAlready2x(original)) continue;
     const normalized = normalize(original);
-    parsed.platforms[i] = toCanonical2x(normalized, {
+    const canonical = toCanonical2x(normalized, {
       name: original.name,
       platform: original.platform,
     });
+    // Keys Homebridge itself owns (`_bridge`: the child bridge's name, pin and port) are not plugin settings, so the
+    // rebuilt entry would silently lose them: the plugin would fall back to the main bridge and every accessory would
+    // have to be paired again.
+    for (const key of Object.keys(original)) {
+      if (key.startsWith("_") && !(key in canonical)) canonical[key] = original[key];
+    }
+    parsed.platforms[i] = canonical;
     migratedAny = true;
   }
 
@@ -392,12 +486,15 @@ function rewriteHomebridgeConfigOnDisk({ configPath, platformAlias, log }) {
   log?.warn?.(
     `[config] Migrated ${indices.length} Wyze platform entr${indices.length === 1 ? "y" : "ies"} ` +
     `in ${configPath} to the 2.0 nested shape. A backup of your previous config ` +
-    `was saved to ${backupPath}. See the 2.0 release notes for the new structure.`
+    `was saved to ${backupPath}. It holds your old settings, including your Wyze password, so delete it once you are happy ` +
+    `with the new config. See the 2.0 release notes for the new structure.`
   );
   return "migrated";
 }
 
 module.exports = {
+  ADVANCED_DEFAULT_ON,
+  ADVANCED_KEYS,
   normalize,
   toCanonical2x,
   isAlready2x,
